@@ -3,12 +3,35 @@ set -euo pipefail
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Uruchom jako root: sudo bash scripts/install-ubuntu.sh"
+  echo "Run as root: sudo bash scripts/install-ubuntu.sh"
   exit 1
 fi
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="https://github.com/iwo2003/projekt_dashbord.git"
+TARGET="/opt/helios"
+SCRIPT_FILE="${BASH_SOURCE[0]:-}"
+
+if [[ ! -f "${SCRIPT_FILE}" ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y ca-certificates git
+  if [[ -d "${TARGET}/.git" ]]; then
+    git -C "${TARGET}" pull --ff-only
+  elif [[ ! -f "${TARGET}/package.json" ]]; then
+    if [[ -e "${TARGET}" ]]; then
+      echo "Katalog ${TARGET} już istnieje i nie jest tym projektem."
+      echo "Directory ${TARGET} already exists and is not this project."
+      exit 1
+    fi
+    git clone "${REPO}" "${TARGET}"
+  fi
+  exec bash "${TARGET}/scripts/install-ubuntu.sh"
+fi
+
+ROOT="$(cd "$(dirname "${SCRIPT_FILE}")/.." && pwd)"
 if [[ ! -f "${ROOT}/package.json" ]]; then
   echo "Nie widzę package.json w ${ROOT}"
+  echo "package.json was not found in ${ROOT}"
   exit 1
 fi
 
@@ -97,4 +120,5 @@ systemctl restart docker || true
 IP="$(hostname -I | awk '{print $1}')"
 echo
 echo "Helios działa: http://${IP}:3000"
-echo "Logi: journalctl -u helios -f"
+echo "Helios is running: http://${IP}:3000"
+echo "Logi / logs: journalctl -u helios -f"
