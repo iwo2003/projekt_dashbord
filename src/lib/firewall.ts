@@ -1,7 +1,6 @@
 import { execFile } from "child_process";
 import fs from "fs";
 import { promisify } from "util";
-import { getSetting } from "./db";
 import { FTP_PASSIVE_END, FTP_PASSIVE_START, FTP_PORT, SFTP_PORT } from "./remote";
 
 const execFileAsync = promisify(execFile);
@@ -12,6 +11,30 @@ export const FIREWALL_SERVICES = [
   { id: "minecraft", rules: [{ port: "25565", proto: "tcp" as const }] },
   {
     id: "cs2",
+    rules: [
+      { port: "27015", proto: "tcp" as const },
+      { port: "27015", proto: "udp" as const },
+      { port: "27020", proto: "udp" as const },
+    ],
+  },
+  {
+    id: "gmod",
+    rules: [
+      { port: "27015", proto: "tcp" as const },
+      { port: "27015", proto: "udp" as const },
+      { port: "27016", proto: "udp" as const },
+    ],
+  },
+  {
+    id: "fs25",
+    rules: [
+      { port: "10823", proto: "tcp" as const },
+      { port: "10823", proto: "udp" as const },
+      { port: "10824", proto: "tcp" as const },
+    ],
+  },
+  {
+    id: "tf2",
     rules: [
       { port: "27015", proto: "tcp" as const },
       { port: "27015", proto: "udp" as const },
@@ -82,10 +105,8 @@ export function lockedPorts(): LockedPort[] {
   for (const port of sshTcpPorts()) add(port, "ssh");
   for (const port of panelPorts()) add(port, "panel");
   add(SFTP_PORT, "sftp");
-  if (getSetting("https_domain")) {
-    add(80, "https");
-    add(443, "https");
-  }
+  add(80, "https");
+  add(443, "https");
   return [...byPort.values()];
 }
 
@@ -216,6 +237,18 @@ export async function allowPort(port: string, proto: FirewallProto) {
   if (!parsed) return { ok: false as const, error: "validation" as const };
   await ufw(["allow", parsed.spec]);
   return { ok: true as const };
+}
+
+export async function openPublicWeb() {
+  await allowPort("80", "tcp").catch(() => undefined);
+  await allowPort("443", "tcp").catch(() => undefined);
+  for (const port of ["80", "443"]) {
+    try {
+      await execFileAsync("iptables", ["-C", "INPUT", "-p", "tcp", "--dport", port, "-j", "ACCEPT"], { timeout: 5000 });
+    } catch {
+      await execFileAsync("iptables", ["-I", "INPUT", "-p", "tcp", "--dport", port, "-j", "ACCEPT"], { timeout: 5000 }).catch(() => undefined);
+    }
+  }
 }
 
 export async function closePort(port: string, proto: FirewallProto) {

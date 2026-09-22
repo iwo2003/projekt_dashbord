@@ -165,7 +165,7 @@ export function BotsView({ canManage }: { canManage: boolean }) {
                   className="hidden"
                   type="file"
                   multiple
-                  accept=".zip,.js,.json,.mjs,application/zip"
+                  accept=".zip,.js,.json,.mjs,.sh,application/zip"
                   disabled={busy !== null}
                   onChange={(event) => {
                     void upload(bot.id, event.target.files);

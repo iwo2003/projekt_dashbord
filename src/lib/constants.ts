@@ -18,6 +18,12 @@ export const MC_VERSIONS = [
   "1.18.2",
 ] as const;
 
+export const GMOD_MAPS = ["gm_flatgrass", "gm_construct"] as const;
+
+export const TF2_MAPS = ["ctf_2fort", "cp_dustbowl", "pl_upward", "koth_harvest", "cp_process"] as const;
+
+export const FS25_MAPS = ["MapUS", "MapEU"] as const;
+
 export const CS2_MAPS = [
   "de_dust2",
   "de_mirage",
@@ -42,7 +48,16 @@ export const IMAGES = {
   minecraftJava21: "itzg/minecraft-server:java21",
   minecraftJava17: "itzg/minecraft-server:java17",
   cs2: "joedwards32/cs2:latest",
+  gmod: "phyremaster/easy-gmod:latest",
+  fs25: "toetje585/arch-fs25server:latest",
+  tf2: "cm2network/tf2:latest",
 } as const;
+
+export function sidePort(game: "minecraft" | "cs2" | "gmod" | "fs25" | "tf2", port: number) {
+  if (game === "cs2" || game === "tf2") return port + 5;
+  if (game === "gmod" || game === "fs25") return port + 1;
+  return null;
+}
 
 export const PERMISSION_GROUPS = [
   { id: "panel", items: ["metrics.view", "panel.manage"] },

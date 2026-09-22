@@ -18,7 +18,7 @@ export async function POST(request: Request, ctx: Ctx) {
   const result = await setSitePhp(id, body.enabled);
   if (!result.ok) {
     const status = result.error === "php_failed" || result.error === "site_failed" ? 502 : 404;
-    return apiError(result.error, status);
+    return apiError(result.error, status, "detail" in result ? result.detail : undefined);
   }
   logEvent(auth.user, "site.php", { name: site.name, domain: site.domain, php: body.enabled ? 1 : 0 });
   return Response.json({ ok: true });

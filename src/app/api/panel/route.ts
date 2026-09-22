@@ -3,6 +3,7 @@ import { alertSettings, saveAlertSettings } from "@/lib/alerts";
 import { apiError, guard, readJson } from "@/lib/api";
 import { accessOverview, disableHttps, enableHttps, httpsRunning, httpsStatus, savePanelHost } from "@/lib/https";
 import { attachPanelSite, detachPanelSite } from "@/lib/panel-site";
+import { publishExistingSites } from "@/lib/sites";
 import { logEvent } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -43,9 +44,10 @@ export async function PUT(request: Request) {
             : started.error === "site_denied"
               ? 403
               : 400;
-      return apiError(started.error, status);
+      return apiError(started.error, status, "detail" in started ? started.detail : undefined);
     }
     logEvent(auth.user, "panel.attach", { host: started.host, via: started.attached });
+    if (started.attached === "helios") await publishExistingSites().catch(() => undefined);
     return NextResponse.json({ ...accessOverview(), ...started });
   }
   if (typeof body?.panelHost === "string") {

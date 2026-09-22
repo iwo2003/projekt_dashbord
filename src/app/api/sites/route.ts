@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const created = await createSite(auth.user.id, body?.name ?? "", body?.domain ?? "", body?.php === true);
   if (!created.ok) {
     const status = created.error === "docker_offline" ? 503 : created.error === "site_failed" || created.error === "php_failed" ? 502 : 400;
-    return apiError(created.error, status);
+    return apiError(created.error, status, "detail" in created ? created.detail : undefined);
   }
   logEvent(auth.user, "site.create", { name: created.site.name, domain: created.site.domain });
   return NextResponse.json({ site: created.site });

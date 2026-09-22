@@ -4,8 +4,8 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
   const response = await fetch(url, { ...init, headers });
-  const data = (await response.json().catch(() => ({}))) as { error?: string };
-  if (!response.ok) throw new Error(data.error || "request_failed");
+  const data = (await response.json().catch(() => ({}))) as { error?: string; detail?: string };
+  if (!response.ok) throw new Error(data.detail || data.error || "request_failed");
   return data as T;
 }
 

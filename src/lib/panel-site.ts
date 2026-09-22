@@ -3,8 +3,9 @@ import fs from "fs/promises";
 import path from "path";
 import { promisify } from "util";
 import { getSetting, setSetting } from "./db";
-import { addHttpsDomain, disableHttps, panelListenPort, savePanelHost } from "./https";
+import { addHttpsDomain, disableHttps, httpsRunning, panelListenPort, refreshCaddyRoutes, savePanelHost } from "./https";
 import { execCommand, getDocker } from "./docker";
+import { writeConfigFile } from "./files";
 import { caddyBeside, nginxBeside } from "./panel-snippets";
 
 const execFileAsync = promisify(execFile);
@@ -239,6 +240,10 @@ export async function syncWwwVhosts(domains: string[]) {
     await writeHostFile("caddy", caddy);
     return "caddy" as const;
   }
+  if (await httpsRunning()) {
+    const attached = await refreshCaddyRoutes();
+    if (attached) return "helios" as const;
+  }
   if (await listening(80)) return "local" as const;
   return "direct" as const;
 }
@@ -385,7 +390,7 @@ server {
     }
 }
 `;
-    await fs.writeFile(conf, text);
+    await writeConfigFile(conf, text);
   }
   await execCommand("helios-sites", ["nginx", "-s", "reload"]);
   return true;
@@ -393,7 +398,7 @@ server {
 
 export async function attachPanelSite(rawHost: string): Promise<
   | { ok: true; host: string; attached: Via | ""; tls: boolean }
-  | { ok: false; error: AttachError }
+  | { ok: false; error: AttachError; detail?: string }
 > {
   const saved = savePanelHost(rawHost);
   if (!saved.ok) return saved;
@@ -406,21 +411,24 @@ export async function attachPanelSite(rawHost: string): Promise<
   try {
     if (await unitActive("nginx")) {
       const installed = await installNginx(saved.host, port);
-      if (!installed.ok) return installed;
-      remember("nginx", installed.tls);
-      return { ok: true, host: saved.host, attached: "nginx", tls: installed.tls };
+      if (installed.ok) {
+        remember("nginx", installed.tls);
+        return { ok: true, host: saved.host, attached: "nginx", tls: installed.tls };
+      }
     }
     if (await unitActive("apache2")) {
       const installed = await installApache(saved.host, port);
-      if (!installed.ok) return installed;
-      remember("apache", installed.tls);
-      return { ok: true, host: saved.host, attached: "apache", tls: installed.tls };
+      if (installed.ok) {
+        remember("apache", installed.tls);
+        return { ok: true, host: saved.host, attached: "apache", tls: installed.tls };
+      }
     }
     if (await unitActive("caddy")) {
       const installed = await installCaddy(saved.host, port);
-      if (!installed.ok) return installed;
-      remember("caddy", installed.tls);
-      return { ok: true, host: saved.host, attached: "caddy", tls: true };
+      if (installed.ok) {
+        remember("caddy", true);
+        return { ok: true, host: saved.host, attached: "caddy", tls: true };
+      }
     }
     const programs = [...(await portPrograms(80)), ...(await portPrograms(443))];
     const publishers = await dockerWebNames();
@@ -450,6 +458,7 @@ export async function attachPanelSite(rawHost: string): Promise<
     remember("helios", true);
     return { ok: true, host: saved.host, attached: "helios", tls: true };
   } catch (error) {
-    return { ok: false, error: denied(error) ? "site_denied" : "site_failed" };
+    const detail = error instanceof Error ? error.message : "";
+    return { ok: false, error: denied(error) ? "site_denied" : "site_failed", detail };
   }
 }

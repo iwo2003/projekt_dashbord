@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, copyText } from "@/lib/client";
-import { CS2_MAPS, MC_VERSIONS } from "@/lib/constants";
+import { CS2_MAPS, FS25_MAPS, GMOD_MAPS, MC_VERSIONS, TF2_MAPS } from "@/lib/constants";
 import { formatWhen } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import type { Cs2Mode, Difficulty, McMode, McType, PublicServer, PublicUser } from "@/lib/types";
@@ -13,7 +13,7 @@ import { ConsolePanel } from "./console-panel";
 import { FilesPanel } from "./files-panel";
 import { PlayersPanel } from "./players-panel";
 import { SchedulePanel } from "./schedule-panel";
-import { statusText } from "./server-card";
+import { statusText, gameLabel } from "./server-card";
 import { ErrorNote, Field, Modal, statusTone } from "./ui";
 import { useI18n } from "./i18n-provider";
 
@@ -47,7 +47,8 @@ export function ServerDetail({ id, user }: { id: string; user: PublicUser }) {
     };
   }, [id]);
 
-  async function power(action: "start" | "stop" | "restart") {
+  async function power(action: "start" | "stop" | "restart" | "update") {
+    if (action === "update" && !window.confirm(t.servers.updateAsk)) return;
     setError(null);
     try {
       const data = await api<{ server: PublicServer }>(`/api/servers/${id}/power`, {
@@ -87,7 +88,7 @@ export function ServerDetail({ id, user }: { id: string; user: PublicUser }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-fog">
-            {server.game === "minecraft" ? t.servers.minecraft : t.servers.cs2}
+            {gameLabel(t, server.game)}
           </p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">{server.name}</h1>
           <p className={`mt-2 text-sm ${statusTone(server.status)}`}>{statusText(t, server)}</p>
@@ -108,6 +109,11 @@ export function ServerDetail({ id, user }: { id: string; user: PublicUser }) {
                 {t.servers.start}
               </button>
             )
+          ) : null}
+          {can(user, "servers.power") ? (
+            <button className="btn btn-ghost" type="button" disabled={server.status === "provisioning"} onClick={() => void power("update")}>
+              {t.servers.update}
+            </button>
           ) : null}
           {can(user, "servers.delete") ? (
             <button className="btn btn-danger" type="button" onClick={() => setConfirmDelete(true)}>
@@ -159,7 +165,15 @@ export function ServerDetail({ id, user }: { id: string; user: PublicUser }) {
                 {copied ? t.copied : server.connect}
               </button>
               <p className="mt-2 max-w-xl text-sm text-fog">
-                {server.game === "minecraft" ? t.detail.mcConnect : t.detail.cs2Connect}
+                {server.game === "minecraft"
+                  ? t.detail.mcConnect
+                  : server.game === "fs25"
+                    ? t.detail.fs25Connect
+                    : server.game === "gmod"
+                      ? t.detail.gmodConnect
+                      : server.game === "tf2"
+                        ? t.detail.tf2Connect
+                        : t.detail.cs2Connect}
               </p>
             </div>
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
@@ -171,12 +185,17 @@ export function ServerDetail({ id, user }: { id: string; user: PublicUser }) {
                   <Info label={t.detail.engine} value={server.config.mcType ?? "PAPER"} />
                   <Info label={t.create.version} value={server.config.version ?? "LATEST"} />
                 </>
-              ) : (
+              ) : server.game === "cs2" ? (
                 <>
                   <Info label={t.create.map} value={server.config.map ?? "de_dust2"} />
                   <Info label={t.create.mode} value={server.config.cs2Mode ?? "competitive"} />
                 </>
+              ) : (
+                <Info label={t.create.map} value={server.config.map ?? (server.game === "fs25" ? "MapUS" : server.game === "tf2" ? "ctf_2fort" : "gm_flatgrass")} />
               )}
+              {server.game === "fs25" && server.extraPort ? (
+                <Info label={t.detail.web} value={String(server.extraPort)} />
+              ) : null}
               <Info
                 label={t.detail.created}
                 value={`${formatWhen(server.createdAt, lang)}${server.createdBy ? ` ${t.detail.by} ${server.createdBy}` : ""}`}
@@ -249,10 +268,16 @@ function SettingsForm({
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const body =
-      server.game === "minecraft"
-        ? { name, port, memoryGb, maxPlayers, mcType, version, motd, difficulty, gameMode, viewDistance, onlineMode }
-        : { name, port, memoryGb, maxPlayers, map, gslt, password, cs2Mode };
+    const steam = server.game === "cs2" || server.game === "gmod" || server.game === "tf2";
+    const body = {
+      name,
+      port,
+      memoryGb,
+      maxPlayers,
+      ...(server.game === "minecraft" ? { mcType, version, motd, difficulty, gameMode, viewDistance, onlineMode } : {}),
+      ...(steam ? { map, gslt, password, ...(server.game === "cs2" ? { cs2Mode } : {}) } : {}),
+      ...(server.game === "fs25" ? { map, password } : {}),
+    };
     try {
       const data = await api<{ server: PublicServer }>(`/api/servers/${server.id}`, {
         method: "PATCH",
@@ -326,6 +351,19 @@ function SettingsForm({
             {t.create.online}
           </label>
         </>
+      ) : server.game === "fs25" ? (
+        <>
+          <Field label={t.create.map}>
+            <select className="field" value={map} onChange={(event) => setMap(event.target.value)}>
+              {FS25_MAPS.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t.create.password}>
+            <input className="field" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </Field>
+        </>
       ) : (
         <>
           <Field label={t.create.gslt}>
@@ -333,19 +371,21 @@ function SettingsForm({
           </Field>
           <Field label={t.create.map}>
             <select className="field" value={map} onChange={(event) => setMap(event.target.value)}>
-              {CS2_MAPS.map((item) => (
+              {(server.game === "gmod" ? GMOD_MAPS : server.game === "tf2" ? TF2_MAPS : CS2_MAPS).map((item) => (
                 <option key={item}>{item}</option>
               ))}
             </select>
           </Field>
-          <Field label={t.create.mode}>
-            <select className="field" value={cs2Mode} onChange={(event) => setCs2Mode(event.target.value as Cs2Mode)}>
-              <option value="competitive">{t.create.competitive}</option>
-              <option value="casual">{t.create.casual}</option>
-              <option value="wingman">{t.create.wingman}</option>
-              <option value="deathmatch">{t.create.deathmatch}</option>
-            </select>
-          </Field>
+          {server.game === "cs2" ? (
+            <Field label={t.create.mode}>
+              <select className="field" value={cs2Mode} onChange={(event) => setCs2Mode(event.target.value as Cs2Mode)}>
+                <option value="competitive">{t.create.competitive}</option>
+                <option value="casual">{t.create.casual}</option>
+                <option value="wingman">{t.create.wingman}</option>
+                <option value="deathmatch">{t.create.deathmatch}</option>
+              </select>
+            </Field>
+          ) : null}
           <Field label={t.create.password}>
             <input className="field" value={password} onChange={(event) => setPassword(event.target.value)} />
           </Field>

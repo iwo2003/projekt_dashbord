@@ -6,6 +6,7 @@ import { promisify } from "util";
 import { randomUUID } from "crypto";
 import {
   deleteSiteRow,
+  getSetting,
   getSiteRow,
   insertSite,
   listSiteRows,
@@ -15,9 +16,11 @@ import {
 } from "./db";
 import { dockerPing, ensureImage, getDocker } from "./docker";
 import { allowPort } from "./firewall";
+import { writeConfigFile } from "./files";
 import { hostAddress } from "./metrics";
 import { syncWwwVhosts } from "./panel-site";
 import { disableRemote } from "./remote";
+import { refreshCaddyRoutes } from "./https";
 
 const execFileAsync = promisify(execFile);
 const CONTAINER = "helios-sites";
@@ -102,42 +105,55 @@ function nginxConf(sites: SiteRow[]) {
 async function publish(sites: SiteRow[]) {
   const dir = rootDir();
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, "nginx.conf"), nginxConf(sites) || emptyServer());
-  const mode = await syncWwwVhosts(sites.map((site) => site.domain));
-  const ports =
-    mode === "direct"
-      ? [
-          { HostPort: "80" },
-          { HostIp: "127.0.0.1", HostPort: "8080" },
-        ]
-      : [{ HostIp: "127.0.0.1", HostPort: "8080" }];
+  await removeContainer(CONTAINER);
+  await writeConfigFile(path.join(dir, "nginx.conf"), nginxConf(sites) || emptyServer());
+  const behind = Boolean(getSetting("panel_host") || getSetting("https_domain"));
+  const mode = behind ? "helios" : await syncWwwVhosts(sites.map((site) => site.domain));
   const php = sites.some((site) => site.php);
   if (php) await ensurePhp(dir);
   else await removeContainer(PHP_CONTAINER);
-  try {
-    await getDocker().getContainer(CONTAINER).remove({ force: true });
-  } catch {
-    /* first start */
+  if (sites.length === 0) {
+    await removeContainer(CONTAINER);
+    return { running: false, mode };
   }
-  if (sites.length === 0) return { running: false, mode };
   await ensureImage(IMAGE);
-  const created = await getDocker().createContainer({
-    name: CONTAINER,
-    Image: IMAGE,
-    HostConfig: {
-      NetworkMode: php ? "helios-web" : "bridge",
-      PortBindings: { "80/tcp": ports },
-      Binds: [
-        `${dir.replace(/\\/g, "/")}:/srv/sites:ro`,
-        `${path.join(dir, "nginx.conf").replace(/\\/g, "/")}:/etc/nginx/conf.d/default.conf:ro`,
-      ],
-      RestartPolicy: { Name: "unless-stopped" },
-    },
-  });
-  await created.start();
+  await bootSites(dir, php, mode === "direct");
+  if (behind) await refreshCaddyRoutes();
   await fs.writeFile(path.join(dir, "mode.txt"), mode);
   if (mode === "direct") await allowPort("80", "tcp").catch(() => undefined);
   return { running: true, mode };
+}
+
+async function bootSites(dir: string, php: boolean, publishPort80: boolean) {
+  const ports = publishPort80
+    ? [{ HostPort: "80" }, { HostIp: "127.0.0.1", HostPort: "8080" }]
+    : [{ HostIp: "127.0.0.1", HostPort: "8080" }];
+  await removeContainer(CONTAINER);
+  try {
+    const created = await getDocker().createContainer({
+      name: CONTAINER,
+      Image: IMAGE,
+      HostConfig: {
+        NetworkMode: php ? "helios-web" : "bridge",
+        PortBindings: { "80/tcp": ports },
+        Binds: [
+          `${dir.replace(/\\/g, "/")}:/srv/sites:ro`,
+          `${path.join(dir, "nginx.conf").replace(/\\/g, "/")}:/etc/nginx/conf.d/default.conf:ro`,
+        ],
+        RestartPolicy: { Name: "unless-stopped" },
+      },
+    });
+    await created.start();
+  } catch (error) {
+    if (!publishPort80) throw error;
+    await bootSites(dir, php, false);
+  }
+}
+
+export async function publishExistingSites() {
+  const sites = listSiteRows();
+  if (sites.length === 0) return;
+  await publish(sites);
 }
 
 function emptyServer() {
@@ -169,8 +185,8 @@ async function ensurePhp(dir: string) {
 async function startPhp(dir: string) {
   const phpDir = path.join(dir, "php");
   await fs.mkdir(phpDir, { recursive: true });
-  await fs.writeFile(path.join(phpDir, "Dockerfile"), PHP_DOCKERFILE);
-  await fs.writeFile(path.join(phpDir, "helios.ini"), PHP_INI);
+  await writeConfigFile(path.join(phpDir, "Dockerfile"), PHP_DOCKERFILE);
+  await writeConfigFile(path.join(phpDir, "helios.ini"), PHP_INI);
   try {
     await getDocker().getImage(PHP_IMAGE).inspect();
   } catch {
@@ -237,7 +253,7 @@ async function present(site: SiteRow, running: boolean, mode: string, host: stri
   } catch {
     files = [];
   }
-  const url = !running ? "" : mode === "local" ? `http://${host}:8080` : `http://${site.domain}`;
+  const url = !running ? "" : mode === "local" ? `http://${host}:8080` : mode === "helios" ? `https://${site.domain}` : `http://${site.domain}`;
   return {
     id: site.id,
     name: site.name,
@@ -280,8 +296,9 @@ export async function createSite(userId: string, name: string, domainRaw: string
   } catch (error) {
     deleteSiteRow(row.id);
     await fs.rm(siteDir(row.id), { recursive: true, force: true });
-    const code = error instanceof Error && error.message === "php_failed" ? "php_failed" : "site_failed";
-    return { ok: false as const, error: code };
+    const detail = error instanceof Error ? error.message : "";
+    const code = detail === "php_failed" ? "php_failed" : "site_failed";
+    return { ok: false as const, error: code, detail };
   }
   return { ok: true as const, site: await present(row, true, "direct", hostAddress()) };
 }
@@ -302,8 +319,9 @@ export async function setSitePhp(id: string, enabled: boolean) {
     await publish(listSiteRows());
   } catch (error) {
     setSitePhpFlag(id, site.php);
-    const code = error instanceof Error && error.message === "php_failed" ? "php_failed" : "site_failed";
-    return { ok: false as const, error: code };
+    const detail = error instanceof Error ? error.message : "";
+    const code = detail === "php_failed" ? "php_failed" : "site_failed";
+    return { ok: false as const, error: code, detail };
   }
   return { ok: true as const };
 }

@@ -1,6 +1,6 @@
 # Helios
 
-Panel VPS do serwerów gier. Na start: Counter-Strike 2 i Minecraft (Paper albo Vanilla). Logowanie, konta z uprawnieniami, dwuetapowe kody z aplikacji, konsola, pliki, kopie i metryki maszyny.
+Panel VPS do serwerów gier. Na start: Minecraft, Counter-Strike 2, Garry's Mod, Farming Simulator 25 i Team Fortress 2. Logowanie, konta z uprawnieniami, dwuetapowe kody z aplikacji, konsola, pliki, kopie i metryki maszyny.
 
 ## Instalacja na Ubuntu
 
@@ -26,7 +26,9 @@ cd /opt/helios && sudo bash scripts/install-ubuntu.sh
 
 Przy pierwszym wejściu w przeglądarce zakładasz konto właściciela. Hasło: minimum 10 znaków, litera i cyfra. Od razu możesz włączyć dwuetapowe logowanie.
 
-Port `3000` musi być otwarty w zaporze dostawcy VPS. Jeśli na serwerze działa `ufw`, skrypt sam dopuszcza panel, porty gier `25565` (Minecraft) i `27015`/`27020` (CS2), `3306` (MySQL), `2222` (SFTP), `21` i `21000–21010` (FTP) oraz pocztę: `25`, `465`, `587` i `993`.
+Port `3000` musi być otwarty w zaporze dostawcy VPS. Panel i strony po domenie używają też portów `80` i `443`. Skrypt dopuszcza je w `ufw`, razem z grami `25565` (Minecraft), `27015`/`27020` (CS2 i Team Fortress 2), `27016` (Garry's Mod), `10823`/`10824` (Farming Simulator 25), `3306` (MySQL), `2222` (SFTP), `21` i `21000–21010` (FTP) oraz pocztą: `25`, `465`, `587` i `993`.
+
+Domenę panelu i stronę dodajesz już w panelu. Caddy sam słucha na `80` i `443`, więc Cloudflare może mieć pomarańczową chmurkę.
 
 ## Po instalacji
 

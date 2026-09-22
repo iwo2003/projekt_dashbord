@@ -1,4 +1,4 @@
-export type Game = "minecraft" | "cs2";
+export type Game = "minecraft" | "cs2" | "gmod" | "fs25" | "tf2";
 export type ServerStatus = "provisioning" | "running" | "stopped" | "error";
 export type McType = "PAPER" | "VANILLA";
 export type Difficulty = "peaceful" | "easy" | "normal" | "hard";

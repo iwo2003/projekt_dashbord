@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
-import { CS2_MAPS, MC_VERSIONS } from "@/lib/constants";
+import { CS2_MAPS, FS25_MAPS, GMOD_MAPS, MC_VERSIONS, TF2_MAPS } from "@/lib/constants";
 import type { Cs2Mode, Difficulty, Game, McMode, McType } from "@/lib/types";
 import { ErrorNote, Field } from "./ui";
 import { useI18n } from "./i18n-provider";
@@ -19,7 +19,7 @@ export function CreateServer() {
   const [mcType, setMcType] = useState<McType>("PAPER");
   const [version, setVersion] = useState<(typeof MC_VERSIONS)[number]>("LATEST");
   const [motd, setMotd] = useState("");
-  const [map, setMap] = useState<(typeof CS2_MAPS)[number]>("de_dust2");
+  const [map, setMap] = useState("de_dust2");
   const [gslt, setGslt] = useState("");
   const [password, setPassword] = useState("");
   const [cs2Mode, setCs2Mode] = useState<Cs2Mode>("competitive");
@@ -31,8 +31,8 @@ export function CreateServer() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void api<{ suggested: { minecraft: number; cs2: number } }>("/api/servers")
-      .then((data) => setPort(game === "minecraft" ? data.suggested.minecraft : data.suggested.cs2))
+    void api<{ suggested: Record<Game, number> }>("/api/servers")
+      .then((data) => setPort(data.suggested[game]))
       .catch(() => undefined);
   }, [game]);
 
@@ -40,33 +40,20 @@ export function CreateServer() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const body =
-      game === "minecraft"
-        ? {
-            game,
-            name,
-            port,
-            memoryGb,
-            maxPlayers,
-            mcType,
-            version,
-            motd: motd || name,
-            difficulty,
-            gameMode,
-            viewDistance,
-            onlineMode,
-          }
-        : {
-            game,
-            name,
-            port,
-            memoryGb,
-            maxPlayers,
-            map,
-            gslt,
-            password,
-            cs2Mode,
-          };
+    const steam = game === "cs2" || game === "gmod" || game === "tf2";
+    const body = {
+      game,
+      name,
+      port,
+      memoryGb,
+      maxPlayers,
+      ...(game === "minecraft"
+        ? { mcType, version, motd: motd || name, difficulty, gameMode, viewDistance, onlineMode }
+        : {}),
+      ...(steam ? { map, gslt, password } : {}),
+      ...(game === "cs2" ? { cs2Mode } : {}),
+      ...(game === "fs25" ? { map, password } : {}),
+    };
     try {
       const data = await api<{ server: { id: string } }>("/api/servers", {
         method: "POST",
@@ -88,29 +75,30 @@ export function CreateServer() {
         <p className="mt-2 max-w-2xl text-fog">{t.create.lead}</p>
       </div>
       <ErrorNote code={error} />
-      <div className="grid gap-3 md:grid-cols-2">
-        <GameChoice
-          active={game === "minecraft"}
-          title={t.servers.minecraft}
-          text={t.create.mcLead}
-          onClick={() => {
-            setGame("minecraft");
-            setName("Survival");
-            setMemoryGb(2);
-            setMaxPlayers(20);
-          }}
-        />
-        <GameChoice
-          active={game === "cs2"}
-          title={t.servers.cs2}
-          text={t.create.cs2Lead}
-          onClick={() => {
-            setGame("cs2");
-            setName("CS2");
-            setMemoryGb(4);
-            setMaxPlayers(10);
-          }}
-        />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {(
+          [
+            ["minecraft", t.servers.minecraft, t.create.mcLead, "Survival", 2, 20, "de_dust2"],
+            ["cs2", t.servers.cs2, t.create.cs2Lead, "CS2", 4, 10, "de_dust2"],
+            ["gmod", t.servers.gmod, t.create.gmodLead, "Garry's Mod", 2, 16, "gm_flatgrass"],
+            ["fs25", t.servers.fs25, t.create.fs25Lead, "Farma", 4, 8, "MapUS"],
+            ["tf2", t.servers.tf2, t.create.tf2Lead, "TF2", 2, 24, "ctf_2fort"],
+          ] as const
+        ).map(([id, title, text, label, memory, players, startMap]) => (
+          <GameChoice
+            key={id}
+            active={game === id}
+            title={title}
+            text={text}
+            onClick={() => {
+              setGame(id);
+              setName(label);
+              setMemoryGb(memory);
+              setMaxPlayers(players);
+              setMap(startMap);
+            }}
+          />
+        ))}
       </div>
       <div className="card grid gap-4 p-5 md:grid-cols-2">
         <Field label={t.create.name}>
@@ -148,6 +136,19 @@ export function CreateServer() {
               </Field>
             </div>
           </>
+        ) : game === "fs25" ? (
+          <>
+            <Field label={t.create.map}>
+              <select className="field" value={map} onChange={(event) => setMap(event.target.value)}>
+                {FS25_MAPS.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label={`${t.create.password} (${t.optional})`}>
+              <input className="field" value={password} onChange={(event) => setPassword(event.target.value)} />
+            </Field>
+          </>
         ) : (
           <>
             <div className="md:col-span-2">
@@ -159,6 +160,9 @@ export function CreateServer() {
                     <a className="text-amber underline-offset-2 hover:underline" href="https://steamcommunity.com/dev/managegameservers" target="_blank" rel="noreferrer">
                       steamcommunity.com/dev/managegameservers
                     </a>
+                    {game === "gmod" ? ` ${t.create.gsltGmod}` : null}
+                    {game === "tf2" ? ` ${t.create.gsltTf2}` : null}
+                    {game === "cs2" ? ` ${t.create.gsltCs2}` : null}
                   </>
                 }
               >
@@ -166,20 +170,22 @@ export function CreateServer() {
               </Field>
             </div>
             <Field label={t.create.map}>
-              <select className="field" value={map} onChange={(event) => setMap(event.target.value as (typeof CS2_MAPS)[number])}>
-                {CS2_MAPS.map((item) => (
+              <select className="field" value={map} onChange={(event) => setMap(event.target.value)}>
+                {(game === "gmod" ? GMOD_MAPS : game === "tf2" ? TF2_MAPS : CS2_MAPS).map((item) => (
                   <option key={item}>{item}</option>
                 ))}
               </select>
             </Field>
-            <Field label={t.create.mode}>
-              <select className="field" value={cs2Mode} onChange={(event) => setCs2Mode(event.target.value as Cs2Mode)}>
-                <option value="competitive">{t.create.competitive}</option>
-                <option value="casual">{t.create.casual}</option>
-                <option value="wingman">{t.create.wingman}</option>
-                <option value="deathmatch">{t.create.deathmatch}</option>
-              </select>
-            </Field>
+            {game === "cs2" ? (
+              <Field label={t.create.mode}>
+                <select className="field" value={cs2Mode} onChange={(event) => setCs2Mode(event.target.value as Cs2Mode)}>
+                  <option value="competitive">{t.create.competitive}</option>
+                  <option value="casual">{t.create.casual}</option>
+                  <option value="wingman">{t.create.wingman}</option>
+                  <option value="deathmatch">{t.create.deathmatch}</option>
+                </select>
+              </Field>
+            ) : null}
             <Field label={`${t.create.password} (${t.optional})`}>
               <input className="field" value={password} onChange={(event) => setPassword(event.target.value)} />
             </Field>

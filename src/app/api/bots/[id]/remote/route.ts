@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { apiError, guard, readJson } from "@/lib/api";
 import { getBotRow, logEvent } from "@/lib/db";
-import { disableRemote, enableRemote, remoteCard, remoteFailureStatus } from "@/lib/remote";
+import path from "path";
+import { disableRemote, enableRemote, remoteCard, remoteFailureStatus, shareVolume } from "@/lib/remote";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -18,6 +19,7 @@ export async function GET(_request: Request, ctx: Ctx) {
   if (auth.error) return auth.error;
   const { id } = await ctx.params;
   if (!getBotRow(id)) return apiError("not_found", 404);
+  await shareVolume(path.join(process.cwd(), "data", "bots", id)).catch(() => undefined);
   return NextResponse.json(await remoteCard(id));
 }
 

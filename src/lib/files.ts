@@ -129,3 +129,10 @@ export async function fileForDownload(root: string, relPath: string) {
   if (!stat.isFile()) throw new FileError("not_found");
   return { target, name: path.basename(target), relative, size: stat.size };
 }
+
+export async function writeConfigFile(file: string, contents: string) {
+  const current = await fs.stat(file).catch(() => null);
+  if (current?.isDirectory()) await fs.rm(file, { recursive: true, force: true });
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, contents);
+}

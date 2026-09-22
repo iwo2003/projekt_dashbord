@@ -26,7 +26,8 @@ function serverRules(server: ServerRecord): PortRule[] {
     { port: String(server.port), proto: "tcp" },
     { port: String(server.port), proto: "udp" },
   ];
-  if (server.extraPort) rules.push({ port: String(server.extraPort), proto: "udp" });
+  if (server.extraPort && server.game === "fs25") rules.push({ port: String(server.extraPort), proto: "tcp" });
+  else if (server.extraPort) rules.push({ port: String(server.extraPort), proto: "udp" });
   return rules;
 }
 

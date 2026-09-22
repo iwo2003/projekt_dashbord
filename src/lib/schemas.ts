@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CS2_MAPS, MC_VERSIONS } from "./constants";
+import { MC_VERSIONS } from "./constants";
 
 export const usernameSchema = z
   .string()
@@ -77,24 +77,24 @@ const serverFields = {
     .max(64)
     .optional()
     .or(z.literal("")),
-  map: z.enum(CS2_MAPS).optional(),
+  map: z.string().trim().max(48).optional(),
   password: z.string().max(64).optional(),
   cs2Mode: z.enum(["competitive", "casual", "wingman", "deathmatch"]).optional(),
 };
 
 export const createServerSchema = z
   .object({
-    game: z.enum(["minecraft", "cs2"]),
+    game: z.enum(["minecraft", "cs2", "gmod", "fs25", "tf2"]),
     ...serverFields,
   })
   .superRefine((value, ctx) => {
-    if (value.game === "cs2") {
+    if (value.game === "cs2" || value.game === "gmod" || value.game === "tf2") {
       if (!value.gslt || value.gslt.length < 8) {
         ctx.addIssue({ code: "custom", path: ["gslt"], message: "gslt" });
       }
-      if (value.maxPlayers > 64) {
-        ctx.addIssue({ code: "custom", path: ["maxPlayers"], message: "players" });
-      }
+    }
+    if (value.game === "cs2" && value.maxPlayers > 64) {
+      ctx.addIssue({ code: "custom", path: ["maxPlayers"], message: "players" });
     }
   });
 
@@ -111,7 +111,7 @@ export const fileWriteSchema = z.object({
 });
 
 export const powerSchema = z.object({
-  action: z.enum(["start", "stop", "restart"]),
+  action: z.enum(["start", "stop", "restart", "update"]),
 });
 
 export const backupCreateSchema = z.object({
@@ -154,7 +154,7 @@ export const firewallActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("disable") }),
   z.object({
     action: z.literal("service"),
-    id: z.enum(["minecraft", "cs2", "mysql", "ftp", "mail"]),
+    id: z.enum(["minecraft", "cs2", "gmod", "fs25", "tf2", "mysql", "ftp", "mail"]),
     open: z.boolean(),
   }),
   z.object({ action: z.literal("server"), id: z.string().uuid(), open: z.boolean() }),

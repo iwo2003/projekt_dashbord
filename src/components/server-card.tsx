@@ -9,6 +9,10 @@ import type { PublicServer, PublicUser } from "@/lib/types";
 import { useI18n } from "./i18n-provider";
 import { statusTone } from "./ui";
 
+export function gameLabel(t: ReturnType<typeof useI18n>["t"], game: string) {
+  if (game === "minecraft" || game === "cs2" || game === "gmod" || game === "fs25" || game === "tf2") return t.servers[game];
+  return game;
+}
 export function statusText(
   t: ReturnType<typeof useI18n>["t"],
   server: Pick<PublicServer, "status" | "statusDetail">,
@@ -26,7 +30,8 @@ export function ServerCard({ server, user }: { server: PublicServer; user: Publi
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  async function power(action: "start" | "stop" | "restart") {
+  async function power(action: "start" | "stop" | "restart" | "update") {
+    if (action === "update" && !window.confirm(t.servers.updateAsk)) return;
     setBusy(true);
     try {
       await api(`/api/servers/${server.id}/power`, {
@@ -44,7 +49,7 @@ export function ServerCard({ server, user }: { server: PublicServer; user: Publi
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-fog">
-            {server.game === "minecraft" ? t.servers.minecraft : t.servers.cs2}
+            {gameLabel(t, server.game)}
           </p>
           <h3 className="mt-1 text-lg font-semibold tracking-tight">{server.name}</h3>
         </div>
@@ -84,6 +89,11 @@ export function ServerCard({ server, user }: { server: PublicServer; user: Publi
               {t.servers.start}
             </button>
           )
+        ) : null}
+        {can(user, "servers.power") ? (
+          <button className="btn btn-quiet" type="button" disabled={busy || server.status === "provisioning"} onClick={() => void power("update")}>
+            {t.servers.update}
+          </button>
         ) : null}
       </div>
     </article>

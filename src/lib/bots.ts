@@ -6,25 +6,26 @@ import path from "path";
 import { promisify } from "util";
 import { deleteBotRow, getBotRow, insertBot, listBotRows, updateBot, type BotRow } from "./db";
 import { decodeDockerChunk, dockerPing, ensureImage, getDocker, inspectState, readLogs } from "./docker";
-import { disableRemote } from "./remote";
+import { writeConfigFile } from "./files";
+import { disableRemote, shareVolume } from "./remote";
 
 const execFileAsync = promisify(execFile);
 const IMAGE = "node:22-alpine";
 const TOKEN = /^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{20,}$/;
 
+const START_SH = `#!/bin/sh
+echo Starting discord bot...
+npm i || exit 1
+exec node src/index.js
+`;
+
 const RUNNER = `#!/bin/sh
 cd /bot || exit 1
-if [ -f package.json ]; then
-  npm install --omit=dev || exit 1
-  if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.start ? 0 : 1)"; then
-    exec npm start
-  fi
+if [ ! -f start.sh ]; then
+  echo "Brak pliku start.sh"
+  exit 1
 fi
-if [ -f index.js ]; then
-  exec node index.js
-fi
-echo "Wgraj bota: index.js albo package.json ze skryptem start."
-exit 1
+exec sh start.sh
 `;
 
 function rootDir() {
@@ -37,6 +38,53 @@ function botDir(id: string) {
 
 function containerName(id: string) {
   return `helios-bot-${id}`;
+}
+
+async function ensureStartScript(dir: string) {
+  const file = path.join(dir, "start.sh");
+  try {
+    await fs.access(file);
+  } catch {
+    await fs.writeFile(file, START_SH);
+  }
+  const owned = await fs.chown(file, 1000, 1000).then(
+    () => true,
+    () => false,
+  );
+  await fs.chmod(file, owned ? 0o775 : 0o777);
+}
+
+async function publishEnv(dir: string, token: string) {
+  const file = path.join(dir, ".env");
+  const current = await fs.readFile(file, "utf8").catch(() => "");
+  const kept = current
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !/^\s*DISCORD_TOKEN\s*=/.test(line));
+  await writeConfigFile(file, `${[...kept, `DISCORD_TOKEN=${token}`].join("\n")}\n`);
+  const owned = await fs.chown(file, 1000, 1000).then(
+    () => true,
+    () => false,
+  );
+  await fs.chmod(file, owned ? 0o660 : 0o666);
+}
+
+function envList(text: string, token: string) {
+  const vars = new Map<string, string>();
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    let value = line.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    vars.set(key, value);
+  }
+  vars.set("DISCORD_TOKEN", token);
+  return [...vars.entries()].map(([key, value]) => `${key}=${value}`);
 }
 
 function present(bot: BotRow, running: boolean) {
@@ -78,13 +126,15 @@ export async function createBot(userId: string, name: string, token: string) {
     createdBy: userId,
     createdAt: Date.now(),
   };
-  await fs.mkdir(botDir(row.id), { recursive: true });
-  await fs.writeFile(path.join(botDir(row.id), ".env"), `DISCORD_TOKEN=${secret}\n`, { mode: 0o600 });
+  await fs.mkdir(path.join(botDir(row.id), "src"), { recursive: true });
+  await publishEnv(botDir(row.id), secret);
+  await ensureStartScript(botDir(row.id));
   await fs.writeFile(
-    path.join(botDir(row.id), "index.js"),
+    path.join(botDir(row.id), "src", "index.js"),
     `console.log("Helios: wgraj pliki bota. Token jest w zmiennej DISCORD_TOKEN.");\n`,
   );
   insertBot(row);
+  await shareVolume(botDir(row.id));
   return { ok: true as const, bot: present(row, false) };
 }
 
@@ -92,7 +142,9 @@ async function ensureContainer(bot: BotRow) {
   const dir = botDir(bot.id);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(rootDir(), "runner.sh"), RUNNER);
-  await fs.writeFile(path.join(dir, ".env"), `DISCORD_TOKEN=${bot.token}\n`, { mode: 0o600 });
+  await ensureStartScript(dir);
+  await publishEnv(dir, bot.token);
+  const envFile = await fs.readFile(path.join(dir, ".env"), "utf8").catch(() => "");
   const name = containerName(bot.id);
   try {
     await getDocker().getContainer(name).remove({ force: true });
@@ -103,7 +155,7 @@ async function ensureContainer(bot: BotRow) {
   const created = await getDocker().createContainer({
     name,
     Image: IMAGE,
-    Env: [`DISCORD_TOKEN=${bot.token}`],
+    Env: envList(envFile, bot.token),
     WorkingDir: "/bot",
     Cmd: ["sh", "/opt/helios-bot.sh"],
     HostConfig: {
@@ -115,6 +167,7 @@ async function ensureContainer(bot: BotRow) {
     },
   });
   updateBot(bot.id, { containerId: created.id, status: "stopped" });
+  await shareVolume(dir);
   return created;
 }
 
@@ -173,7 +226,8 @@ export async function uploadBot(id: string, files: { name: string; data: Buffer 
     await fs.writeFile(path.join(dir, base), file.data);
   }
   await flattenSingleFolder(dir);
-  await fs.writeFile(path.join(dir, ".env"), `DISCORD_TOKEN=${bot.token}\n`, { mode: 0o600 });
+  await publishEnv(dir, bot.token);
+  await shareVolume(dir);
   if (bot.status === "running") {
     const started = await powerBot(id, "restart");
     if (!started.ok) return started;

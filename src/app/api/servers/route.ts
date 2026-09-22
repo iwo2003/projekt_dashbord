@@ -18,6 +18,9 @@ export async function GET() {
     suggested: {
       minecraft: await suggestPort("minecraft"),
       cs2: await suggestPort("cs2"),
+      gmod: await suggestPort("gmod"),
+      fs25: await suggestPort("fs25"),
+      tf2: await suggestPort("tf2"),
     },
   });
 }

@@ -1,8 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
-import { getSetting, setSetting } from "./db";
+import { getSetting, listSiteRows, setSetting } from "./db";
 import { dockerPing, ensureImage, getDocker } from "./docker";
-import { allowPort, PANEL_PORT } from "./firewall";
+import { writeConfigFile } from "./files";
+import { openPublicWeb, PANEL_PORT } from "./firewall";
 import { hostAddress } from "./metrics";
 
 const CONTAINER = "helios-caddy";
@@ -61,75 +62,113 @@ export async function httpsRunning() {
   }
 }
 
-function caddyDomains(text: string) {
-  const found: string[] = [];
-  for (const line of text.split("\n")) {
-    const match = /^([a-z0-9.-]+\.[a-z0-9.-]+)\s*\{/.exec(line.trim());
-    if (match?.[1] && PANEL_HOST.test(match[1])) found.push(match[1]);
-  }
-  return found;
+function panelHosts(extra: string[] = []) {
+  return [
+    ...new Set(
+      [getSetting("panel_host"), getSetting("https_domain"), ...extra]
+        .map((host) => host.trim().toLowerCase())
+        .filter((host) => PANEL_HOST.test(host)),
+    ),
+  ];
 }
 
-function caddyFile(domains: string[], listenPort: string) {
-  const unique = [...new Set(domains)];
-  return `{
-	email postmaster@${unique[0]}
+function caddyRoutes(panel: string[], listenPort: string) {
+  const taken = new Set(panel);
+  const routes = panel.map((host) => ({ host, upstream: `127.0.0.1:${listenPort}` }));
+  for (const site of listSiteRows()) {
+    if (taken.has(site.domain) || !PANEL_HOST.test(site.domain)) continue;
+    taken.add(site.domain);
+    routes.push({ host: site.domain, upstream: "127.0.0.1:8080" });
+  }
+  return routes;
 }
-${unique.map((domain) => `${domain} {\n\treverse_proxy 127.0.0.1:${listenPort}\n}`).join("\n")}
+
+function caddyFile(routes: { host: string; upstream: string }[]) {
+  const blocks = routes.flatMap((route) => [
+    `http://${route.host} {\n\treverse_proxy ${route.upstream}\n}`,
+    `${route.host} {\n\treverse_proxy ${route.upstream}\n}`,
+  ]);
+  return `{
+	email postmaster@${routes[0]?.host ?? "localhost"}
+	auto_https disable_redirects
+}
+${blocks.join("\n")}
 `;
 }
 
+async function releaseSitePort80() {
+  try {
+    const container = getDocker().getContainer("helios-sites");
+    const info = await container.inspect();
+    const bindings = info.HostConfig?.PortBindings?.["80/tcp"] ?? [];
+    const holdsPublic80 = bindings.some((item: { HostPort?: string; HostIp?: string }) => item.HostPort === "80" && (!item.HostIp || item.HostIp === "0.0.0.0" || item.HostIp === "::"));
+    if (holdsPublic80) await container.stop({ t: 2 }).catch(() => undefined);
+  } catch {
+    /* the site container is already gone */
+  }
+}
+
+function dockerText(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 async function startCaddy(domains: string[]) {
-  const unique = [...new Set(domains.map((domain) => domain.trim().toLowerCase()))].filter((domain) => PANEL_HOST.test(domain));
-  if (unique.length === 0) return { ok: false as const, error: "validation" as const };
+  const panel = panelHosts(domains);
+  const listenPort = process.env.PORT || String(PANEL_PORT);
+  const routes = caddyRoutes(panel, listenPort);
+  if (routes.length === 0) return { ok: false as const, error: "validation" as const };
   if (process.platform !== "linux") return { ok: false as const, error: "https_unavailable" as const };
   const ping = await dockerPing();
   if (!ping.ok) return { ok: false as const, error: "docker_offline" as const };
   const dir = rootDir();
-  await fs.mkdir(path.join(dir, "data"), { recursive: true });
-  await fs.mkdir(path.join(dir, "config"), { recursive: true });
-  const listenPort = process.env.PORT || String(PANEL_PORT);
-  await fs.writeFile(path.join(dir, "Caddyfile"), caddyFile(unique, listenPort));
   try {
-    await getDocker().getContainer(CONTAINER).remove({ force: true });
-  } catch {
-    /* first start */
+    await fs.mkdir(path.join(dir, "data"), { recursive: true });
+    await fs.mkdir(path.join(dir, "config"), { recursive: true });
+    try {
+      await getDocker().getContainer(CONTAINER).remove({ force: true });
+    } catch {
+      /* first start */
+    }
+    await writeConfigFile(path.join(dir, "Caddyfile"), caddyFile(routes));
+    await releaseSitePort80();
+    await ensureImage(IMAGE);
+    const created = await getDocker().createContainer({
+      name: CONTAINER,
+      Image: IMAGE,
+      User: "0:0",
+      HostConfig: {
+        NetworkMode: "host",
+        Binds: [
+          `${dir.replace(/\\/g, "/")}/Caddyfile:/etc/caddy/Caddyfile:ro`,
+          `${dir.replace(/\\/g, "/")}/data:/data`,
+          `${dir.replace(/\\/g, "/")}/config:/config`,
+        ],
+        RestartPolicy: { Name: "unless-stopped" },
+      },
+    });
+    await openPublicWeb();
+    try {
+      await created.start();
+    } catch (error) {
+      await created.remove({ force: true }).catch(() => undefined);
+      return { ok: false as const, error: "https_failed" as const, detail: dockerText(error) };
+    }
+  } catch (error) {
+    return { ok: false as const, error: "https_failed" as const, detail: dockerText(error) };
   }
-  await ensureImage(IMAGE);
-  const created = await getDocker().createContainer({
-    name: CONTAINER,
-    Image: IMAGE,
-    User: "0:0",
-    HostConfig: {
-      NetworkMode: "host",
-      Binds: [
-        `${dir.replace(/\\/g, "/")}/Caddyfile:/etc/caddy/Caddyfile:ro`,
-        `${dir.replace(/\\/g, "/")}/data:/data`,
-        `${dir.replace(/\\/g, "/")}/config:/config`,
-      ],
-      RestartPolicy: { Name: "unless-stopped" },
-    },
-  });
-  await allowPort("80", "tcp").catch(() => undefined);
-  await allowPort("443", "tcp").catch(() => undefined);
-  try {
-    await created.start();
-  } catch {
-    await created.remove({ force: true }).catch(() => undefined);
-    return { ok: false as const, error: "https_failed" as const };
-  }
-  setSetting("https_domain", unique[0] ?? "");
+  if (panel[0]) setSetting("https_domain", panel[0]);
   return { ok: true as const };
 }
 
+export async function refreshCaddyRoutes() {
+  if (!(await httpsRunning())) return false;
+  const started = await startCaddy(panelHosts());
+  return started.ok;
+}
+
 export async function enableHttps(domain: string) {
-  let existing: string[] = [];
-  try {
-    existing = caddyDomains(await fs.readFile(path.join(rootDir(), "Caddyfile"), "utf8"));
-  } catch {
-    existing = [];
-  }
-  return startCaddy([domain, ...existing]);
+  return startCaddy(panelHosts([domain]));
 }
 
 export async function addHttpsDomain(domain: string) {

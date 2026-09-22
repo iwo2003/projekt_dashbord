@@ -35,6 +35,26 @@ function usersFile() {
   return path.join(process.cwd(), "data", "sftp", "users.conf");
 }
 
+export async function shareVolume(dir: string) {
+  await fs.mkdir(dir, { recursive: true });
+  await relax(dir);
+}
+
+async function relax(target: string) {
+  const stat = await fs.lstat(target).catch(() => null);
+  if (!stat || stat.isSymbolicLink()) return;
+  const owned = await fs.chown(target, 1000, 1000).then(
+    () => true,
+    () => false,
+  );
+  if (stat.isDirectory()) {
+    await fs.chmod(target, owned ? 0o775 : 0o777);
+    for (const name of await fs.readdir(target)) await relax(path.join(target, name));
+    return;
+  }
+  if (stat.isFile()) await fs.chmod(target, owned ? 0o664 : 0o666);
+}
+
 async function removeNamed(name: string) {
   try {
     await getDocker().getContainer(name).remove({ force: true });
@@ -78,8 +98,7 @@ async function syncNow(): Promise<{ ok: true } | { ok: false; error: "docker_off
   const lines = logins.map((login) => `${login.username}:${login.password}:1000:1000:files`);
   await fs.writeFile(file, `${lines.join("\n")}\n`, { mode: 0o600 });
   for (const login of logins) {
-    await fs.mkdir(login.volumePath, { recursive: true });
-    await fs.chmod(login.volumePath, 0o777).catch(() => undefined);
+    await shareVolume(login.volumePath);
   }
 
   try {

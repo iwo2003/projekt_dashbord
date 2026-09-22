@@ -3,8 +3,9 @@ import { getCurrentUser } from "./auth";
 import { can, type Permission } from "./permissions";
 import type { PublicUser } from "./types";
 
-export function apiError(code: string, status: number) {
-  return NextResponse.json({ error: code }, { status });
+export function apiError(code: string, status: number, detail?: string) {
+  const extra = detail?.replace(/\s+/g, " ").trim().slice(0, 180);
+  return NextResponse.json(extra ? { error: code, detail: extra } : { error: code }, { status });
 }
 
 export async function guard(permission?: Permission): Promise<

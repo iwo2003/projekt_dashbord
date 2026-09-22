@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { sidePort } from "./constants";
 import { can } from "./permissions";
 import { randomSecret } from "./crypto";
 import {
@@ -19,6 +20,7 @@ import {
   inspectRunning,
   containerImageMatches,
   ensureImage,
+  pullImage,
   publishedPorts,
   removeGameContainer,
   restartContainer,
@@ -48,9 +50,9 @@ export async function suggestPort(game: Game) {
     if (server.extraPort) used.add(server.extraPort);
   }
   for (const port of await publishedPorts()) used.add(port);
-  let port = game === "minecraft" ? 25565 : 27015;
-  const step = game === "cs2" ? 10 : 1;
-  while (used.has(port) || (game === "cs2" && used.has(port + 5))) {
+  let port = game === "fs25" ? 10823 : game === "minecraft" ? 25565 : 27015;
+  const step = game === "minecraft" ? 1 : game === "fs25" ? 2 : 10;
+  while (used.has(port) || used.has(sidePort(game, port) ?? -1)) {
     port += step;
     if (port > 65000) break;
   }
@@ -183,13 +185,13 @@ export async function beginCreate(
     return { ok: false as const, error: "docker_offline" as const };
   }
   let port = input.port;
-  let extraPort = input.game === "cs2" ? port + 5 : null;
+  let extraPort = sidePort(input.game, port);
   const published = await publishedPorts();
   const blocked =
     portTaken(port, extraPort) || published.has(port) || (extraPort != null && published.has(extraPort));
   if (blocked) {
     port = await suggestPort(input.game);
-    extraPort = input.game === "cs2" ? port + 5 : null;
+    extraPort = sidePort(input.game, port);
   }
   if (portTaken(port, extraPort)) return { ok: false as const, error: "port_taken" as const };
   const now = Date.now();
@@ -216,10 +218,10 @@ export async function beginCreate(
   return { ok: true as const, server };
 }
 
-export function enqueue(id: string, start: boolean) {
+export function enqueue(id: string, start: boolean, update = false) {
   if (running.has(id)) return;
   running.add(id);
-  void provision(id, start)
+  void provision(id, start, update)
     .catch((error) => {
       const message = error instanceof Error ? error.message : "provision_failed";
       updateServer(id, { status: "error", statusDetail: null, error: message });
@@ -235,20 +237,22 @@ async function reuseOrRebuild(server: ServerRecord) {
   return containerId;
 }
 
-async function provision(id: string, start: boolean) {
+async function provision(id: string, start: boolean, update = false) {
   const server = getServer(id);
   if (!server || cancelled.has(id)) return;
-  updateServer(id, { status: "provisioning", statusDetail: "pulling", error: null });
+  updateServer(id, { status: "provisioning", statusDetail: update ? "updating" : "pulling", error: null });
   if (server.game === "cs2") {
     updateServer(id, { statusDetail: "plugins" });
     await installCs2Plugins(server.volumePath);
   }
-  await ensureImage(imageFor(server.game, server.config.version));
+  const image = imageFor(server.game, server.config.version);
+  if (update) await pullImage(image);
+  else await ensureImage(image);
   if (cancelled.has(id) || !getServer(id)) return;
   updateServer(id, { statusDetail: "creating" });
   const fresh = getServer(id);
   if (!fresh) return;
-  const containerId = await createGameContainer(fresh);
+  const containerId = await createGameContainer(fresh, update);
   if (cancelled.has(id) || !getServer(id)) {
     await removeGameContainer(id, containerId);
     return;
@@ -260,11 +264,18 @@ async function provision(id: string, start: boolean) {
   }
 }
 
-export async function powerServer(user: PublicUser, id: string, action: "start" | "stop" | "restart") {
+export async function powerServer(user: PublicUser, id: string, action: "start" | "stop" | "restart" | "update") {
   const server = getServer(id);
   if (!server) return { ok: false as const, error: "not_found" as const };
   const ping = await dockerPing();
   if (!ping.ok) return { ok: false as const, error: "docker_offline" as const };
+  if (action === "update") {
+    if (server.containerId) await stopContainer(server.containerId).catch(() => undefined);
+    updateServer(id, { status: "provisioning", statusDetail: "updating", error: null });
+    enqueue(id, true, true);
+    logEvent(user, "server.upgrade", { name: server.name });
+    return { ok: true as const, server: getServer(id)! };
+  }
   if (action === "start") {
     if (!server.containerId) {
       enqueue(id, true);
@@ -316,10 +327,10 @@ export async function applySettings(
 ) {
   const server = getServer(id);
   if (!server) return { ok: false as const, error: "not_found" as const };
-  const extraPort = server.game === "cs2" ? input.port + 5 : null;
+  const extraPort = sidePort(server.game, input.port);
   if (portTaken(input.port, extraPort, id)) return { ok: false as const, error: "port_taken" as const };
   const nextConfig = configFromInput(input, server.config);
-  if (server.game === "cs2" && !nextConfig.gslt) return { ok: false as const, error: "validation" as const };
+  if ((server.game === "cs2" || server.game === "gmod" || server.game === "tf2") && !nextConfig.gslt) return { ok: false as const, error: "validation" as const };
   const wasRunning = server.status === "running";
   const structural =
     input.port !== server.port ||

@@ -65,22 +65,33 @@ if [[ -f /etc/default/ufw ]]; then
   sed -i 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw
 fi
 
-if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-  ufw reload || true
-  ufw allow 3000/tcp
-  ufw allow 25565/tcp
-  ufw allow 27015/tcp
-  ufw allow 27015/udp
-  ufw allow 27020/udp
-  ufw allow 3306/tcp
-  ufw allow 2222/tcp
-  ufw allow 21/tcp
-  ufw allow 21000:21010/tcp
-  ufw allow 25/tcp
-  ufw allow 465/tcp
-  ufw allow 587/tcp
-  ufw allow 993/tcp
+if command -v ufw >/dev/null 2>&1; then
+  ufw allow 22/tcp || true
+  ufw allow 3000/tcp || true
+  ufw allow 80/tcp || true
+  ufw allow 443/tcp || true
+  ufw allow 25565/tcp || true
+  ufw allow 27015/tcp || true
+  ufw allow 27015/udp || true
+  ufw allow 27020/udp || true
+  ufw allow 27016/udp || true
+  ufw allow 10823/tcp || true
+  ufw allow 10823/udp || true
+  ufw allow 10824/tcp || true
+  ufw allow 3306/tcp || true
+  ufw allow 2222/tcp || true
+  ufw allow 21/tcp || true
+  ufw allow 21000:21010/tcp || true
+  ufw allow 25/tcp || true
+  ufw allow 465/tcp || true
+  ufw allow 587/tcp || true
+  ufw allow 993/tcp || true
+  if ufw status | grep -q "Status: active"; then
+    ufw reload || true
+  fi
 fi
+iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 80 -j ACCEPT || true
+iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 443 -j ACCEPT || true
 systemctl restart docker || true
 
 IP="$(hostname -I | awk '{print $1}')"

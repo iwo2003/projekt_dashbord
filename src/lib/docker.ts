@@ -1,7 +1,8 @@
 import Docker from "dockerode";
 import fs from "fs/promises";
 import path from "path";
-import { CS2_MODES, IMAGES } from "./constants";
+import { CS2_MODES, IMAGES, sidePort } from "./constants";
+import { hostAddress } from "./metrics";
 import type { Game, ServerConfig, ServerRecord } from "./types";
 
 let client: Docker | null = null;
@@ -86,7 +87,7 @@ function sameImage(current: string, desired: string) {
   return current.replace(/^docker.io\//, "") === desired.replace(/^docker.io\//, "");
 }
 
-function minecraftEnv(name: string, port: number, config: ServerConfig, hostNetwork: boolean) {
+function minecraftEnv(name: string, port: number, config: ServerConfig, hostNetwork: boolean, update: boolean) {
   const env = [
     "EULA=TRUE",
     `TYPE=${config.mcType ?? "PAPER"}`,
@@ -104,6 +105,7 @@ function minecraftEnv(name: string, port: number, config: ServerConfig, hostNetw
     "USE_AIKAR_FLAGS=true",
     `TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Warsaw"}`,
   ];
+  if (update) env.push("FORCE_REDOWNLOAD=TRUE");
   if (hostNetwork) {
     const rconPort = port + 10000 <= 65535 ? port + 10000 : port - 1;
     env.push(`SERVER_PORT=${port}`, `RCON_PORT=${rconPort}`);
@@ -118,7 +120,7 @@ function minecraftEnv(name: string, port: number, config: ServerConfig, hostNetw
   return env;
 }
 
-function cs2Env(name: string, port: number, config: ServerConfig) {
+function cs2Env(name: string, port: number, config: ServerConfig, update: boolean) {
   const mode = CS2_MODES[config.cs2Mode ?? "competitive"];
   const env = [
     `SRCDS_TOKEN=${(config.gslt ?? "").trim()}`,
@@ -131,13 +133,79 @@ function cs2Env(name: string, port: number, config: ServerConfig) {
     `CS2_GAMEMODE=${mode.mode}`,
     "CS2_SERVER_HIBERNATE=0",
     "CS2_LAN=0",
-    "STEAMAPPVALIDATE=0",
+    `STEAMAPPVALIDATE=${update ? "1" : "0"}`,
   ];
   if (config.password) env.push(`CS2_PW=${config.password.replace(/[\r\n]/g, "")}`);
   return env;
 }
 
-export async function createGameContainer(server: ServerRecord) {
+function gmodEnv(name: string, port: number, clientPort: number, config: ServerConfig) {
+  return [
+    `HOSTNAME=${name.replace(/[\r\n]/g, " ")}`,
+    `GMODPORT=${port}`,
+    `CLIENTPORT=${clientPort}`,
+    `MAXPLAYERS=${config.maxPlayers}`,
+    "GAMEMODE=sandbox",
+    `GAMEMAP=${config.map || "gm_flatgrass"}`,
+    `LOGINTOKEN=${(config.gslt ?? "").trim()}`,
+    `RCONPASSWORD=${config.rconPassword}`,
+  ];
+}
+
+function tf2Env(name: string, port: number, tvPort: number, config: ServerConfig) {
+  const env = [
+    `SRCDS_TOKEN=${(config.gslt ?? "").trim()}`,
+    `SRCDS_HOSTNAME=${name.replace(/[\r\n]/g, " ")}`,
+    `SRCDS_PORT=${port}`,
+    `SRCDS_TV_PORT=${tvPort}`,
+    `SRCDS_RCONPW=${config.rconPassword}`,
+    `SRCDS_MAXPLAYERS=${config.maxPlayers}`,
+    `SRCDS_STARTMAP=${config.map || "ctf_2fort"}`,
+  ];
+  if (config.password) env.push(`SRCDS_PW=${config.password.replace(/[\r\n]/g, "")}`);
+  return env;
+}
+
+function fs25Env(name: string, port: number, config: ServerConfig) {
+  return [
+    `SERVER_NAME=${name.replace(/[\r\n]/g, " ")}`,
+    `SERVER_PASSWORD=${(config.password ?? "").replace(/[\r\n]/g, "")}`,
+    `SERVER_ADMIN=${config.rconPassword}`,
+    `SERVER_PLAYERS=${config.maxPlayers}`,
+    `SERVER_PORT=${port}`,
+    `SERVER_MAP=${config.map || "MapUS"}`,
+    "SERVER_CROSSPLAY=true",
+    "AUTOSTART_SERVER=true",
+    "WEB_USERNAME=admin",
+    `WEB_PASSWORD=${config.rconPassword}`,
+    `VNC_PASSWORD=${config.rconPassword}`,
+    "PUID=0",
+    "PGID=0",
+  ];
+}
+
+async function prepareFs25(server: ServerRecord) {
+  for (const folder of ["config", "game", "dlc", "installer"]) {
+    const dir = path.join(server.volumePath, folder);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.chmod(dir, 0o777).catch(() => undefined);
+  }
+  const web = sidePort("fs25", server.port);
+  await fs.writeFile(
+    path.join(server.volumePath, "installer", "CZYTAJ.txt"),
+    "Wrzuć tutaj rozpakowane pliki Farming Simulator 25 z portalu GIANTS.\nSam serwer nie jest w Steam. Dodatki wrzuć do katalogu dlc, potem zrób restart.\n",
+  );
+  await fs.writeFile(
+    path.join(server.volumePath, "panel.txt"),
+    `Gra: ${hostAddress()}:${server.port}\nPanel WWW: http://${hostAddress()}:${web}\nLogin: admin\nHasło: ${configPassword(server)}\n`,
+  );
+}
+
+function configPassword(server: ServerRecord) {
+  return server.config.rconPassword;
+}
+
+export async function createGameContainer(server: ServerRecord, update = false) {
   await fs.mkdir(server.volumePath, { recursive: true });
   await fs.chmod(server.volumePath, 0o777).catch(() => undefined);
   const docker = getDocker();
@@ -148,40 +216,73 @@ export async function createGameContainer(server: ServerRecord) {
     /* no previous container */
   }
 
-  const minecraft = server.game === "minecraft";
   const image = imageFor(server.game, server.config.version);
   await ensureImage(image);
-  const hostNetwork = minecraft && process.platform !== "win32";
-  const internalGamePort = minecraft ? 25565 : 27015;
-  const exposed: Record<string, Record<string, never>> = {
-    [`${internalGamePort}/tcp`]: {},
-  };
-  const bindings: Record<string, { HostPort: string }[]> = {
-    [`${internalGamePort}/tcp`]: [{ HostPort: String(server.port) }],
-  };
-  if (!minecraft) {
-    exposed[`${internalGamePort}/udp`] = {};
-    exposed["27020/udp"] = {};
-    bindings[`${internalGamePort}/udp`] = [{ HostPort: String(server.port) }];
-    bindings["27020/udp"] = [{ HostPort: String(server.extraPort ?? server.port + 5) }];
+  const hostNetwork = server.game === "minecraft" && process.platform !== "win32";
+  const exposed: Record<string, Record<string, never>> = {};
+  const bindings: Record<string, { HostPort: string }[]> = {};
+  function open(containerPort: number, proto: "tcp" | "udp", hostPort = containerPort) {
+    const key = `${containerPort}/${proto}`;
+    exposed[key] = {};
+    bindings[key] = [{ HostPort: String(hostPort) }];
   }
+
+  let env: string[];
+  let volume = "/data";
+  if (server.game === "minecraft") {
+    env = minecraftEnv(server.name, server.port, server.config, hostNetwork, update);
+    volume = "/data";
+    if (!hostNetwork) open(25565, "tcp", server.port);
+  } else if (server.game === "cs2") {
+    env = cs2Env(server.name, 27015, server.config, update);
+    volume = "/home/steam/cs2-dedicated";
+    open(27015, "tcp", server.port);
+    open(27015, "udp", server.port);
+    open(27020, "udp", server.extraPort ?? server.port + 5);
+  } else if (server.game === "gmod") {
+    const client = server.extraPort ?? server.port + 1;
+    env = gmodEnv(server.name, server.port, client, server.config);
+    volume = "/home/steam/garrysmod";
+    open(server.port, "tcp");
+    open(server.port, "udp");
+    open(client, "udp");
+  } else if (server.game === "tf2") {
+    const tv = server.extraPort ?? server.port + 5;
+    env = tf2Env(server.name, server.port, tv, server.config);
+    volume = "/home/steam/tf-dedicated";
+    open(server.port, "tcp");
+    open(server.port, "udp");
+    open(tv, "udp");
+  } else {
+    await prepareFs25(server);
+    env = fs25Env(server.name, server.port, server.config);
+    open(server.port, "tcp");
+    open(server.port, "udp");
+    if (server.extraPort) open(7999, "tcp", server.extraPort);
+  }
+
+  const binds =
+    server.game === "fs25"
+      ? ["config", "game", "dlc", "installer"].map((folder) =>
+          bindPath(path.join(server.volumePath, folder), `/opt/fs25/${folder}`),
+        )
+      : [bindPath(server.volumePath, volume)];
 
   const container = await docker.createContainer({
     name,
     Image: image,
-    Env: minecraft
-      ? minecraftEnv(server.name, server.port, server.config, hostNetwork)
-      : cs2Env(server.name, internalGamePort, server.config),
+    Env: env,
     Tty: true,
     OpenStdin: true,
     ExposedPorts: hostNetwork ? undefined : exposed,
     HostConfig: {
       NetworkMode: hostNetwork ? "host" : "bridge",
       PortBindings: hostNetwork ? undefined : bindings,
-      Binds: [bindPath(server.volumePath, minecraft ? "/data" : "/home/steam/cs2-dedicated")],
+      Binds: binds,
       Memory: containerMemoryBytes(server),
       MemorySwap: containerMemoryBytes(server),
       RestartPolicy: { Name: "unless-stopped" },
+      ...(server.game === "fs25" ? { CapAdd: ["SYS_NICE"] } : {}),
     },
   });
   return container.id;
@@ -320,7 +421,11 @@ export function minecraftImage(version?: string) {
 }
 
 export function imageFor(game: Game, version?: string) {
-  return game === "minecraft" ? minecraftImage(version) : IMAGES.cs2;
+  if (game === "minecraft") return minecraftImage(version);
+  if (game === "gmod") return IMAGES.gmod;
+  if (game === "fs25") return IMAGES.fs25;
+  if (game === "tf2") return IMAGES.tf2;
+  return IMAGES.cs2;
 }
 
 export async function containerImageMatches(server: ServerRecord) {
