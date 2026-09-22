@@ -6,6 +6,10 @@ A VPS panel for game servers, websites, mail, and Discord bots. One command inst
 
 Gry / games: Minecraft (Paper albo Vanilla), Counter-Strike 2, Garry's Mod, Farming Simulator 25, Team Fortress 2.
 
+Licencja / license: wolno używać i zmieniać na własne potrzeby. Nie wolno sprzedawać panelu jako własnego produktu. Pełny tekst jest w pliku `LICENSE`.
+
+You may use and modify it for yourself. You may not sell the panel as your own product. The full text is in `LICENSE`.
+
 ## Jedna komenda / One command
 
 Na serwerze Ubuntu, jako root:
