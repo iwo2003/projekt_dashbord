@@ -101,6 +101,8 @@ if command -v ufw >/dev/null 2>&1; then
   ufw allow 10823/tcp || true
   ufw allow 10823/udp || true
   ufw allow 10824/tcp || true
+  ufw allow 30120/tcp || true
+  ufw allow 30120/udp || true
   ufw allow 3306/tcp || true
   ufw allow 2222/tcp || true
   ufw allow 21/tcp || true

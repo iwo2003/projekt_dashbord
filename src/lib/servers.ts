@@ -50,8 +50,8 @@ export async function suggestPort(game: Game) {
     if (server.extraPort) used.add(server.extraPort);
   }
   for (const port of await publishedPorts()) used.add(port);
-  let port = game === "fs25" ? 10823 : game === "minecraft" ? 25565 : 27015;
-  const step = game === "minecraft" ? 1 : game === "fs25" ? 2 : 10;
+  let port = game === "fs25" ? 10823 : game === "gta" ? 30120 : game === "minecraft" ? 25565 : 27015;
+  const step = game === "minecraft" || game === "gta" ? 1 : game === "fs25" ? 2 : 10;
   while (used.has(port) || used.has(sidePort(game, port) ?? -1)) {
     port += step;
     if (port > 65000) break;
@@ -70,10 +70,10 @@ export function portTaken(port: number, extra: number | null, exceptId?: string)
 }
 
 export function toPublicServer(server: ServerRecord, viewer: PublicUser): PublicServer {
-  const { gslt, ...withSecret } = server.config;
+  const { gslt, licenseKey, ...withSecret } = server.config;
   const rest = Object.fromEntries(
     Object.entries(withSecret).filter(([key]) => key !== "rconPassword"),
-  ) as Omit<ServerConfig, "rconPassword" | "gslt">;
+  ) as Omit<ServerConfig, "rconPassword" | "gslt" | "licenseKey">;
   return {
     id: server.id,
     name: server.name,
@@ -91,7 +91,8 @@ export function toPublicServer(server: ServerRecord, viewer: PublicUser): Public
     config: {
       ...rest,
       gsltSet: Boolean(gslt),
-      ...(can(viewer, "servers.settings") ? { gslt: gslt ?? "" } : {}),
+      licenseSet: Boolean(licenseKey),
+      ...(can(viewer, "servers.settings") ? { gslt: gslt ?? "", licenseKey: licenseKey ?? "" } : {}),
     },
   };
 }
@@ -137,6 +138,8 @@ function configFromInput(
     map?: string;
     password?: string;
     cs2Mode?: ServerConfig["cs2Mode"];
+    licenseKey?: string;
+    onesync?: boolean;
   },
   previous?: ServerConfig,
 ): ServerConfig {
@@ -155,6 +158,8 @@ function configFromInput(
     map: input.map,
     password: input.password,
     cs2Mode: input.cs2Mode,
+    licenseKey: input.licenseKey?.trim() || previous?.licenseKey,
+    onesync: input.onesync ?? previous?.onesync,
   };
 }
 
@@ -177,6 +182,8 @@ export async function beginCreate(
     map?: string;
     password?: string;
     cs2Mode?: ServerConfig["cs2Mode"];
+    licenseKey?: string;
+    onesync?: boolean;
   },
 ) {
   const ping = await dockerPing();
@@ -323,6 +330,8 @@ export async function applySettings(
     map?: string;
     password?: string;
     cs2Mode?: ServerConfig["cs2Mode"];
+    licenseKey?: string;
+    onesync?: boolean;
   },
 ) {
   const server = getServer(id);
@@ -331,6 +340,7 @@ export async function applySettings(
   if (portTaken(input.port, extraPort, id)) return { ok: false as const, error: "port_taken" as const };
   const nextConfig = configFromInput(input, server.config);
   if ((server.game === "cs2" || server.game === "gmod" || server.game === "tf2") && !nextConfig.gslt) return { ok: false as const, error: "validation" as const };
+  if (server.game === "gta" && !nextConfig.licenseKey) return { ok: false as const, error: "validation" as const };
   const wasRunning = server.status === "running";
   const structural =
     input.port !== server.port ||

@@ -10,7 +10,7 @@ import { useI18n } from "./i18n-provider";
 import { statusTone } from "./ui";
 
 export function gameLabel(t: ReturnType<typeof useI18n>["t"], game: string) {
-  if (game === "minecraft" || game === "cs2" || game === "gmod" || game === "fs25" || game === "tf2") return t.servers[game];
+  if (game === "minecraft" || game === "cs2" || game === "gmod" || game === "fs25" || game === "tf2" || game === "gta") return t.servers[game];
   return game;
 }
 export function statusText(

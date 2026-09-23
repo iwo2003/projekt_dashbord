@@ -22,6 +22,8 @@ export function CreateServer() {
   const [map, setMap] = useState("de_dust2");
   const [gslt, setGslt] = useState("");
   const [password, setPassword] = useState("");
+  const [licenseKey, setLicenseKey] = useState("");
+  const [onesync, setOnesync] = useState(true);
   const [cs2Mode, setCs2Mode] = useState<Cs2Mode>("competitive");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [gameMode, setGameMode] = useState<McMode>("survival");
@@ -53,6 +55,7 @@ export function CreateServer() {
       ...(steam ? { map, gslt, password } : {}),
       ...(game === "cs2" ? { cs2Mode } : {}),
       ...(game === "fs25" ? { map, password } : {}),
+      ...(game === "gta" ? { licenseKey, onesync, motd: motd || name } : {}),
     };
     try {
       const data = await api<{ server: { id: string } }>("/api/servers", {
@@ -83,6 +86,7 @@ export function CreateServer() {
             ["gmod", t.servers.gmod, t.create.gmodLead, "Garry's Mod", 2, 16, "gm_flatgrass"],
             ["fs25", t.servers.fs25, t.create.fs25Lead, "Farma", 4, 8, "MapUS"],
             ["tf2", t.servers.tf2, t.create.tf2Lead, "TF2", 2, 24, "ctf_2fort"],
+            ["gta", t.servers.gta, t.create.gtaLead, "GTA V", 4, 48, ""],
           ] as const
         ).map(([id, title, text, label, memory, players, startMap]) => (
           <GameChoice
@@ -148,6 +152,31 @@ export function CreateServer() {
             <Field label={`${t.create.password} (${t.optional})`}>
               <input className="field" value={password} onChange={(event) => setPassword(event.target.value)} />
             </Field>
+          </>
+        ) : game === "gta" ? (
+          <>
+            <div className="md:col-span-2">
+              <Field
+                label={t.create.license}
+                hint={
+                  <>
+                    {t.create.licenseHint}{" "}
+                    <a className="text-amber underline-offset-2 hover:underline" href="https://keymaster.fivem.net" target="_blank" rel="noreferrer">
+                      keymaster.fivem.net
+                    </a>
+                  </>
+                }
+              >
+                <input className="field font-mono" value={licenseKey} onChange={(event) => setLicenseKey(event.target.value.trim())} required />
+              </Field>
+            </div>
+            <Field label={t.create.motd}>
+              <input className="field" value={motd} onChange={(event) => setMotd(event.target.value)} placeholder={name} />
+            </Field>
+            <label className="mt-7 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={onesync} onChange={(event) => setOnesync(event.target.checked)} />
+              {t.create.onesync}
+            </label>
           </>
         ) : (
           <>

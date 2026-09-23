@@ -51,9 +51,10 @@ export const IMAGES = {
   gmod: "phyremaster/easy-gmod:latest",
   fs25: "toetje585/arch-fs25server:latest",
   tf2: "cm2network/tf2:latest",
+  gta: "spritsail/fivem:latest",
 } as const;
 
-export function sidePort(game: "minecraft" | "cs2" | "gmod" | "fs25" | "tf2", port: number) {
+export function sidePort(game: "minecraft" | "cs2" | "gmod" | "fs25" | "tf2" | "gta", port: number) {
   if (game === "cs2" || game === "tf2") return port + 5;
   if (game === "gmod" || game === "fs25") return port + 1;
   return null;

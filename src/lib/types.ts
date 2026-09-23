@@ -1,4 +1,4 @@
-export type Game = "minecraft" | "cs2" | "gmod" | "fs25" | "tf2";
+export type Game = "minecraft" | "cs2" | "gmod" | "fs25" | "tf2" | "gta";
 export type ServerStatus = "provisioning" | "running" | "stopped" | "error";
 export type McType = "PAPER" | "VANILLA";
 export type Difficulty = "peaceful" | "easy" | "normal" | "hard";
@@ -20,6 +20,8 @@ export type ServerConfig = {
   map?: string;
   password?: string;
   cs2Mode?: Cs2Mode;
+  licenseKey?: string;
+  onesync?: boolean;
 };
 
 export type ServerRecord = {
@@ -53,7 +55,7 @@ export type PublicServer = {
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
-  config: Omit<ServerConfig, "rconPassword"> & { gsltSet: boolean };
+  config: Omit<ServerConfig, "rconPassword"> & { gsltSet: boolean; licenseSet: boolean };
 };
 
 export type PublicUser = {

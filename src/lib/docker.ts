@@ -184,6 +184,10 @@ function fs25Env(name: string, port: number, config: ServerConfig) {
   ];
 }
 
+function configPassword(server: ServerRecord) {
+  return server.config.rconPassword;
+}
+
 async function prepareFs25(server: ServerRecord) {
   for (const folder of ["config", "game", "dlc", "installer"]) {
     const dir = path.join(server.volumePath, folder);
@@ -201,8 +205,73 @@ async function prepareFs25(server: ServerRecord) {
   );
 }
 
-function configPassword(server: ServerRecord) {
-  return server.config.rconPassword;
+function gtaEnv(config: ServerConfig) {
+  const env = [`LICENSE_KEY=${(config.licenseKey ?? "").trim()}`, `RCON_PASSWORD=${config.rconPassword}`];
+  if (config.onesync === false) env.push("NO_ONESYNC=1");
+  return env;
+}
+
+function cfgText(value: string) {
+  return value.replace(/[\r\n"]/g, " ").trim();
+}
+
+const GTA_RESOURCES = ["mapmanager", "chat", "spawnmanager", "sessionmanager", "basic-gamemode", "hardcap"];
+
+async function prepareGta(server: ServerRecord) {
+  const resources = path.join(server.volumePath, "resources");
+  await fs.mkdir(resources, { recursive: true });
+  await fs.chmod(resources, 0o777).catch(() => undefined);
+  const port = server.port;
+  const name = cfgText(server.name);
+  const desc = cfgText(server.config.motd || server.name);
+  const key = (server.config.licenseKey ?? "").trim();
+  const cfgPath = path.join(server.volumePath, "server.cfg");
+  const builtIn = new Set(GTA_RESOURCES);
+  let extra: string[] = [];
+  try {
+    const existing = await fs.readFile(cfgPath, "utf8");
+    extra = existing
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => {
+        const match = /^ensure\s+(\S+)/.exec(line);
+        return match != null && !builtIn.has(match[1]);
+      });
+  } catch {
+    /* first start */
+  }
+  const lines = [
+    `endpoint_add_tcp "0.0.0.0:${port}"`,
+    `endpoint_add_udp "0.0.0.0:${port}"`,
+    `sv_maxclients ${server.config.maxPlayers}`,
+    `sv_hostname "${name}"`,
+    `sets sv_projectName "${name}"`,
+    `sets sv_projectDesc "${desc}"`,
+    `sv_licenseKey "${key}"`,
+    `set steam_webApiKey "none"`,
+    "sv_scriptHookAllowed 0",
+    `set onesync ${server.config.onesync === false ? "off" : "on"}`,
+    `rcon_password "${server.config.rconPassword}"`,
+    ...GTA_RESOURCES.map((item) => `ensure ${item}`),
+    ...extra,
+    "",
+  ];
+  await fs.writeFile(cfgPath, lines.join("\n"));
+  await fs.writeFile(
+    path.join(server.volumePath, "CZYTAJ.txt"),
+    [
+      "Serwer FiveM do GTA V.",
+      "W FiveM naciśnij F8 i wpisz: connect ADRES:PORT",
+      "Zasoby wrzuć do katalogu resources. W server.cfg dopisz linię: ensure nazwa",
+      "Klucz z keymaster.fivem.net jest w server.cfg jako sv_licenseKey.",
+      "",
+      "FiveM server for GTA V.",
+      "In FiveM press F8 and type: connect ADDRESS:PORT",
+      "Put resources in the resources folder. Add this line to server.cfg: ensure name",
+      "The key from keymaster.fivem.net is sv_licenseKey in server.cfg.",
+      "",
+    ].join("\n"),
+  );
 }
 
 export async function createGameContainer(server: ServerRecord, update = false) {
@@ -253,6 +322,12 @@ export async function createGameContainer(server: ServerRecord, update = false) 
     open(server.port, "tcp");
     open(server.port, "udp");
     open(tv, "udp");
+  } else if (server.game === "gta") {
+    await prepareGta(server);
+    env = gtaEnv(server.config);
+    volume = "/config";
+    open(server.port, "tcp");
+    open(server.port, "udp");
   } else {
     await prepareFs25(server);
     env = fs25Env(server.name, server.port, server.config);
@@ -425,6 +500,7 @@ export function imageFor(game: Game, version?: string) {
   if (game === "gmod") return IMAGES.gmod;
   if (game === "fs25") return IMAGES.fs25;
   if (game === "tf2") return IMAGES.tf2;
+  if (game === "gta") return IMAGES.gta;
   return IMAGES.cs2;
 }
 

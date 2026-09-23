@@ -21,6 +21,7 @@ export async function GET() {
       gmod: await suggestPort("gmod"),
       fs25: await suggestPort("fs25"),
       tf2: await suggestPort("tf2"),
+      gta: await suggestPort("gta"),
     },
   });
 }

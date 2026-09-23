@@ -13,7 +13,7 @@ type Payload = {
   available: boolean;
   active: boolean;
   locked: Locked[];
-  services: { id: "minecraft" | "cs2" | "gmod" | "fs25" | "tf2" | "mysql" | "ftp" | "mail"; rules: Rule[]; open: boolean }[];
+  services: { id: "minecraft" | "cs2" | "gmod" | "fs25" | "tf2" | "gta" | "mysql" | "ftp" | "mail"; rules: Rule[]; open: boolean }[];
   servers: { id: string; name: string; game: string; rules: Rule[]; open: boolean }[];
   extra: Rule[];
 };

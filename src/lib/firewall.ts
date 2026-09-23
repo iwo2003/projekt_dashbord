@@ -41,6 +41,13 @@ export const FIREWALL_SERVICES = [
       { port: "27020", proto: "udp" as const },
     ],
   },
+  {
+    id: "gta",
+    rules: [
+      { port: "30120", proto: "tcp" as const },
+      { port: "30120", proto: "udp" as const },
+    ],
+  },
   { id: "mysql", rules: [{ port: "3306", proto: "tcp" as const }] },
   {
     id: "ftp",

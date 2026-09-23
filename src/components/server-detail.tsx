@@ -173,7 +173,9 @@ export function ServerDetail({ id, user }: { id: string; user: PublicUser }) {
                       ? t.detail.gmodConnect
                       : server.game === "tf2"
                         ? t.detail.tf2Connect
-                        : t.detail.cs2Connect}
+                        : server.game === "gta"
+                          ? t.detail.gtaConnect
+                          : t.detail.cs2Connect}
               </p>
             </div>
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
@@ -185,6 +187,8 @@ export function ServerDetail({ id, user }: { id: string; user: PublicUser }) {
                   <Info label={t.detail.engine} value={server.config.mcType ?? "PAPER"} />
                   <Info label={t.create.version} value={server.config.version ?? "LATEST"} />
                 </>
+              ) : server.game === "gta" ? (
+                <Info label={t.create.onesync} value={server.config.onesync === false ? t.create.onesyncOff : t.create.onesyncOn} />
               ) : server.game === "cs2" ? (
                 <>
                   <Info label={t.create.map} value={server.config.map ?? "de_dust2"} />
@@ -256,6 +260,8 @@ function SettingsForm({
   const [map, setMap] = useState(server.config.map ?? "de_dust2");
   const [gslt, setGslt] = useState(server.config.gslt ?? "");
   const [password, setPassword] = useState(server.config.password ?? "");
+  const [licenseKey, setLicenseKey] = useState(server.config.licenseKey ?? "");
+  const [onesync, setOnesync] = useState(server.config.onesync !== false);
   const [cs2Mode, setCs2Mode] = useState<Cs2Mode>(server.config.cs2Mode ?? "competitive");
   const [difficulty, setDifficulty] = useState<Difficulty>(server.config.difficulty ?? "normal");
   const [gameMode, setGameMode] = useState<McMode>(server.config.gameMode ?? "survival");
@@ -277,6 +283,7 @@ function SettingsForm({
       ...(server.game === "minecraft" ? { mcType, version, motd, difficulty, gameMode, viewDistance, onlineMode } : {}),
       ...(steam ? { map, gslt, password, ...(server.game === "cs2" ? { cs2Mode } : {}) } : {}),
       ...(server.game === "fs25" ? { map, password } : {}),
+      ...(server.game === "gta" ? { licenseKey, onesync, motd } : {}),
     };
     try {
       const data = await api<{ server: PublicServer }>(`/api/servers/${server.id}`, {
@@ -363,6 +370,29 @@ function SettingsForm({
           <Field label={t.create.password}>
             <input className="field" value={password} onChange={(event) => setPassword(event.target.value)} />
           </Field>
+        </>
+      ) : server.game === "gta" ? (
+        <>
+          <Field
+            label={t.create.license}
+            hint={
+              <>
+                {t.create.licenseHint}{" "}
+                <a className="text-amber underline-offset-2 hover:underline" href="https://keymaster.fivem.net" target="_blank" rel="noreferrer">
+                  keymaster.fivem.net
+                </a>
+              </>
+            }
+          >
+            <input className="field font-mono" value={licenseKey} onChange={(event) => setLicenseKey(event.target.value.trim())} required />
+          </Field>
+          <Field label={t.create.motd}>
+            <input className="field" value={motd} onChange={(event) => setMotd(event.target.value)} />
+          </Field>
+          <label className="mt-7 flex items-center gap-2 text-sm md:col-span-2">
+            <input type="checkbox" checked={onesync} onChange={(event) => setOnesync(event.target.checked)} />
+            {t.create.onesync}
+          </label>
         </>
       ) : (
         <>

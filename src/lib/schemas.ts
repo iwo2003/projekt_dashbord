@@ -80,11 +80,18 @@ const serverFields = {
   map: z.string().trim().max(48).optional(),
   password: z.string().max(64).optional(),
   cs2Mode: z.enum(["competitive", "casual", "wingman", "deathmatch"]).optional(),
+  licenseKey: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{10,80}$/)
+    .optional()
+    .or(z.literal("")),
+  onesync: z.boolean().optional(),
 };
 
 export const createServerSchema = z
   .object({
-    game: z.enum(["minecraft", "cs2", "gmod", "fs25", "tf2"]),
+    game: z.enum(["minecraft", "cs2", "gmod", "fs25", "tf2", "gta"]),
     ...serverFields,
   })
   .superRefine((value, ctx) => {
@@ -92,6 +99,9 @@ export const createServerSchema = z
       if (!value.gslt || value.gslt.length < 8) {
         ctx.addIssue({ code: "custom", path: ["gslt"], message: "gslt" });
       }
+    }
+    if (value.game === "gta" && (!value.licenseKey || value.licenseKey.length < 10)) {
+      ctx.addIssue({ code: "custom", path: ["licenseKey"], message: "license" });
     }
     if (value.game === "cs2" && value.maxPlayers > 64) {
       ctx.addIssue({ code: "custom", path: ["maxPlayers"], message: "players" });
@@ -154,7 +164,7 @@ export const firewallActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("disable") }),
   z.object({
     action: z.literal("service"),
-    id: z.enum(["minecraft", "cs2", "gmod", "fs25", "tf2", "mysql", "ftp", "mail"]),
+    id: z.enum(["minecraft", "cs2", "gmod", "fs25", "tf2", "gta", "mysql", "ftp", "mail"]),
     open: z.boolean(),
   }),
   z.object({ action: z.literal("server"), id: z.string().uuid(), open: z.boolean() }),
