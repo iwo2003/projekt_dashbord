@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/client";
-import { SHOP_GAMES } from "@/lib/constants";
+import { SHOP_GAMES, SHOP_TEMPLATES, type ShopTemplate } from "@/lib/constants";
 import type { Game } from "@/lib/types";
 import { ErrorNote, Field } from "./ui";
 import { useI18n } from "./i18n-provider";
@@ -40,6 +40,7 @@ type CodeRow = {
 };
 type State = {
   host: string;
+  template: ShopTemplate;
   enabled: boolean;
   panelUrl: string;
   stripe: boolean;
@@ -174,6 +175,33 @@ export function ShopView({ canManage }: { canManage: boolean }) {
     setError(null);
     try {
       apply(await api<State>("/api/shop", { method: "POST", body: JSON.stringify({ action: "send", id }) }));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "request_failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function chooseTemplate(template: ShopTemplate) {
+    if (!state || !canManage) return;
+    setBusy(true);
+    setError(null);
+    try {
+      apply(
+        await api<State>("/api/shop", {
+          method: "PUT",
+          body: JSON.stringify({
+            host: state.host,
+            stripe: state.stripe,
+            paypal: state.paypal,
+            p24: state.p24,
+            paypalSandbox: state.paypalSandbox,
+            p24Sandbox: state.p24Sandbox,
+            enabled: state.enabled,
+            template,
+          }),
+        }),
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "request_failed");
     } finally {
@@ -354,6 +382,37 @@ export function ShopView({ canManage }: { canManage: boolean }) {
               </div>
             )}
           </form>
+
+          <section className="card space-y-4 p-5">
+            <h2 className="text-lg font-semibold">{t.shop.templateTitle}</h2>
+            <p className="text-sm text-fog">{t.shop.templateLead}</p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {SHOP_TEMPLATES.map((id) => {
+                const copy = {
+                  helios: { name: t.shop.templateHelios, hint: t.shop.templateHeliosHint, swatch: "border-amber bg-[#11141c]" },
+                  night: { name: t.shop.templateNight, hint: t.shop.templateNightHint, swatch: "border-violet-400 bg-[#07060f]" },
+                  paper: { name: t.shop.templatePaper, hint: t.shop.templatePaperHint, swatch: "border-[#1c1915] bg-[#f4efe6]" },
+                  terminal: { name: t.shop.templateTerminal, hint: t.shop.templateTerminalHint, swatch: "border-green-400 bg-black" },
+                  arcade: { name: t.shop.templateArcade, hint: t.shop.templateArcadeHint, swatch: "border-fuchsia-400 bg-[#2a1038]" },
+                }[id];
+                const selected = state.template === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={!canManage || busy}
+                    aria-pressed={selected}
+                    className={`rounded-2xl border p-3 text-left ${selected ? "ring-1 ring-amber" : "border-white/10"}`}
+                    onClick={() => void chooseTemplate(id)}
+                  >
+                    <span className={`mb-3 block h-14 rounded-xl border-2 ${copy.swatch}`} />
+                    <span className="block font-medium">{copy.name}</span>
+                    <span className="mt-1 block text-xs text-fog">{copy.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
           <section className="card space-y-3 p-5">
             <h2 className="text-lg font-semibold">{t.shop.serversTitle}</h2>

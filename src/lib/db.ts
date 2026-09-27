@@ -237,6 +237,7 @@ function database() {
         delivery TEXT NOT NULL DEFAULT 'off',
         wait_online INTEGER NOT NULL DEFAULT 1,
         commands TEXT NOT NULL DEFAULT '',
+        image TEXT NOT NULL DEFAULT '',
         created_at INTEGER NOT NULL
       );
 
@@ -354,6 +355,7 @@ function database() {
   ensureSitePhp(globalForDb.heliosDb);
   ensureShopConsent(globalForDb.heliosDb);
   ensureShopCode(globalForDb.heliosDb);
+  ensureShopImage(globalForDb.heliosDb);
   return globalForDb.heliosDb;
 }
 
@@ -369,7 +371,26 @@ function ensureShopConsent(db: DatabaseSync) {
   db.exec("ALTER TABLE shop_orders ADD COLUMN consent INTEGER NOT NULL DEFAULT 0");
 }
 
+function ensureShopImage(db: DatabaseSync) {
+  const columns = db.prepare("PRAGMA table_info(shop_products)").all() as { name: string }[];
+  if (columns.length && !columns.some((column) => column.name === "image")) {
+    db.exec("ALTER TABLE shop_products ADD COLUMN image TEXT NOT NULL DEFAULT ''");
+  }
+}
+
 function ensureShopCode(db: DatabaseSync) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shop_codes (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      code TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      percent INTEGER NOT NULL DEFAULT 0,
+      amount_cents INTEGER NOT NULL DEFAULT 0,
+      uses_max INTEGER NOT NULL DEFAULT 0,
+      uses_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+  `);
   const columns = db.prepare("PRAGMA table_info(shop_orders)").all() as { name: string }[];
   if (columns.length && !columns.some((column) => column.name === "code_id")) {
     db.exec("ALTER TABLE shop_orders ADD COLUMN code_id TEXT NOT NULL DEFAULT ''");
@@ -963,6 +984,7 @@ export type ShopProductRow = {
   delivery: "off" | "console" | "plugin";
   wait_online: number;
   commands: string;
+  image: string;
   created_at: number;
 };
 
@@ -1001,10 +1023,10 @@ export function insertShopProduct(row: ShopProductRow) {
   database()
     .prepare(
       `INSERT INTO shop_products (
-        id, server_id, name, description, price_cents, delivery, wait_online, commands, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, server_id, name, description, price_cents, delivery, wait_online, commands, image, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(row.id, row.server_id, row.name, row.description, row.price_cents, row.delivery, row.wait_online, row.commands, row.created_at);
+    .run(row.id, row.server_id, row.name, row.description, row.price_cents, row.delivery, row.wait_online, row.commands, row.image, row.created_at);
 }
 
 export function updateShopProduct(row: ShopProductRow) {
@@ -1015,6 +1037,10 @@ export function updateShopProduct(row: ShopProductRow) {
        WHERE id = ?`,
     )
     .run(row.server_id, row.name, row.description, row.price_cents, row.delivery, row.wait_online, row.commands, row.id);
+}
+
+export function setShopProductImage(id: string, image: string) {
+  database().prepare("UPDATE shop_products SET image = ? WHERE id = ?").run(image, id);
 }
 
 export function deleteShopProduct(id: string) {

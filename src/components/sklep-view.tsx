@@ -5,15 +5,19 @@ import { api } from "@/lib/client";
 import { ErrorNote, Field, LanguageSwitch } from "./ui";
 import { useI18n } from "./i18n-provider";
 import { ShopLegalLinks } from "./shop-legal";
+import { ShopFrame, shopProductGrid } from "./shop-theme";
+import { shopTemplate } from "@/lib/constants";
 
 type Seller = { name: string; address: string; email: string; nip: string };
 
 type Catalog = {
   open?: boolean;
+  template?: string;
   lockedGame?: string;
   seller?: Seller;
+  hasCodes?: boolean;
   providers: ("stripe" | "paypal" | "p24")[];
-  products: { id: string; name: string; description: string; priceCents: number; serverName: string; game: string }[];
+  products: { id: string; name: string; description: string; priceCents: number; serverName: string; game: string; image?: string; askSteam?: boolean; askFivem?: boolean }[];
 };
 
 export function SklepView() {
@@ -50,6 +54,7 @@ export function SklepView() {
   const picking = games.length > 1 && !locked && !game;
   const visible = (catalog?.products ?? []).filter((item) => !game || item.game === game);
   const product = visible.find((item) => item.id === productId) ?? null;
+  const template = shopTemplate(catalog?.template ?? "");
 
   function gameName(id: string) {
     if (id === "minecraft" || id === "cs2" || id === "gmod" || id === "tf2" || id === "gta" || id === "fs25") return t.servers[id];
@@ -58,12 +63,25 @@ export function SklepView() {
 
   async function buy(provider: "stripe" | "paypal" | "p24") {
     if (!product) return;
+    if ((product.askSteam && !steam.trim()) || (product.askFivem && !fivem.trim())) {
+      setError("validation");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const data = await api<{ url: string }>("/api/shop/public", {
         method: "POST",
-        body: JSON.stringify({ productId: product.id, nick, email, steam, fivem, provider, consent: true, code }),
+        body: JSON.stringify({
+          productId: product.id,
+          nick,
+          email,
+          steam: product.askSteam ? steam : "",
+          fivem: product.askFivem ? fivem : "",
+          provider,
+          consent: true,
+          code: catalog?.hasCodes ? code : "",
+        }),
       });
       window.location.href = data.url;
     } catch (caught) {
@@ -73,7 +91,7 @@ export function SklepView() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-3xl space-y-6 px-5 py-8">
+    <ShopFrame template={template}>
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-semibold tracking-tight">{locked && game ? `${t.shop.publicTitle} · ${gameName(game)}` : t.shop.publicTitle}</h1>
         <LanguageSwitch />
@@ -100,14 +118,16 @@ export function SklepView() {
       ) : null}
       {picking ? <p className="text-fog">{t.shop.gameChoice}</p> : null}
       {catalog && catalog.open !== false && !picking && visible.length === 0 ? <p className="text-fog">{game ? t.shop.gameEmpty : t.shop.empty}</p> : null}
-      <div className="grid gap-3">
+      <div className={shopProductGrid(template)}>
         {visible.map((item) => (
           <button
             key={item.id}
             type="button"
-            className={`card p-4 text-left ${productId === item.id ? "ring-1 ring-amber" : ""}`}
+            data-picked={productId === item.id}
+            className={`shop-product card p-4 text-left ${template === "terminal" ? "font-mono" : ""} ${productId === item.id && template === "helios" ? "ring-1 ring-amber" : ""}`}
             onClick={() => setProductId(item.id)}
           >
+            {item.image ? <img src={item.image} alt={item.name} className="mb-3 h-40 w-full rounded-xl object-cover" /> : null}
             <p className="font-medium">{item.name}</p>
             <p className="text-sm text-fog">{item.serverName} · {(item.priceCents / 100).toFixed(2)} zł</p>
             {item.description ? <p className="mt-2 text-sm">{item.description}</p> : null}
@@ -122,15 +142,21 @@ export function SklepView() {
           <Field label={t.shop.email}>
             <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
           </Field>
-          <Field label={`${t.shop.steam} (${t.optional})`}>
-            <input className="field" value={steam} onChange={(event) => setSteam(event.target.value)} />
-          </Field>
-          <Field label={`${t.shop.fivem} (${t.optional})`}>
-            <input className="field" value={fivem} onChange={(event) => setFivem(event.target.value)} />
-          </Field>
-          <Field label={`${t.shop.promo} (${t.optional})`}>
-            <input className="field" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} />
-          </Field>
+          {product.askSteam ? (
+            <Field label={t.shop.steam}>
+              <input className="field" value={steam} onChange={(event) => setSteam(event.target.value)} required />
+            </Field>
+          ) : null}
+          {product.askFivem ? (
+            <Field label={t.shop.fivem}>
+              <input className="field" value={fivem} onChange={(event) => setFivem(event.target.value)} required />
+            </Field>
+          ) : null}
+          {catalog?.hasCodes ? (
+            <Field label={`${t.shop.promo} (${t.optional})`}>
+              <input className="field" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} />
+            </Field>
+          ) : null}
           {catalog?.seller?.name && catalog.seller.address && catalog.seller.email ? (
             <>
               <label className="flex items-start gap-2 text-sm leading-6">
@@ -163,6 +189,6 @@ export function SklepView() {
         </p>
       ) : null}
       <ShopLegalLinks />
-    </div>
+    </ShopFrame>
   );
 }

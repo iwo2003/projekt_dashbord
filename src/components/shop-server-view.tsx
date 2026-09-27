@@ -14,6 +14,7 @@ type Product = {
   name: string;
   price_cents: number;
   delivery: "off" | "console" | "plugin";
+  image: string;
 };
 type State = { servers: ServerRow[]; products: Product[] };
 
@@ -41,6 +42,8 @@ export function ShopServerView({ serverId, canManage }: { serverId: string; canM
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [product, setProduct] = useState(emptyProduct);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoKey, setPhotoKey] = useState(0);
 
   function apply(next: State) {
     setState(next);
@@ -57,16 +60,33 @@ export function ShopServerView({ serverId, canManage }: { serverId: string; canM
 
   async function saveProduct(event: React.FormEvent) {
     event.preventDefault();
+    if (photo && photo.size > 2 * 1024 * 1024) {
+      setError("too_large");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      apply(
-        await api<State>("/api/shop", {
-          method: "POST",
-          body: JSON.stringify({ ...product, serverId, priceZl: Number(product.priceZl) }),
-        }),
-      );
+      const saved = await api<State & { savedId?: string }>("/api/shop", {
+        method: "POST",
+        body: JSON.stringify({ ...product, serverId, priceZl: Number(product.priceZl) }),
+      });
+      if (photo && saved.savedId) {
+        const form = new FormData();
+        form.set("id", saved.savedId);
+        form.set("file", photo);
+        try {
+          apply(await api<State>("/api/shop/image", { method: "POST", body: form }));
+        } catch (uploadError) {
+          await api(`/api/shop?id=${saved.savedId}`, { method: "DELETE" }).catch(() => undefined);
+          throw uploadError;
+        }
+      } else {
+        apply(saved);
+      }
       setProduct(emptyProduct);
+      setPhoto(null);
+      setPhotoKey((key) => key + 1);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "request_failed");
     } finally {
@@ -133,6 +153,11 @@ export function ShopServerView({ serverId, canManage }: { serverId: string; canM
               <h2 className="text-lg font-semibold">{t.shop.productTitle}</h2>
               <p className="text-sm text-fog">{t.shop.productLead}</p>
               <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <Field label={`${t.shop.productImage} (${t.optional})`} hint={t.shop.productImageHint}>
+                    <input key={photoKey} className="text-sm" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => setPhoto(event.target.files?.[0] ?? null)} />
+                  </Field>
+                </div>
                 <Field label={t.shop.productName}>
                   <input className="field" value={product.name} onChange={(event) => setProduct({ ...product, name: event.target.value })} required />
                 </Field>
@@ -170,9 +195,12 @@ export function ShopServerView({ serverId, canManage }: { serverId: string; canM
             {products.length === 0 ? <p className="text-sm text-fog">{t.shop.serverEmpty}</p> : null}
             {products.map((item) => (
               <div key={item.id} className="flex flex-col gap-2 border-t border-white/10 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium">{item.name}</p>
-                  <p className="text-sm text-fog">{(item.price_cents / 100).toFixed(2)} zł · {item.delivery === "off" ? t.shop.deliveryOff : item.delivery === "console" ? t.shop.deliveryConsole : t.shop.deliveryPlugin}</p>
+                <div className="flex items-center gap-3">
+                  {item.image ? <img src={`/api/shop/image?id=${item.id}`} alt="" className="h-16 w-16 rounded-xl object-cover" /> : null}
+                  <div>
+                    <p className="font-medium">{item.name}</p>
+                    <p className="text-sm text-fog">{(item.price_cents / 100).toFixed(2)} zł · {item.delivery === "off" ? t.shop.deliveryOff : item.delivery === "console" ? t.shop.deliveryConsole : t.shop.deliveryPlugin}</p>
+                  </div>
                 </div>
                 {canManage ? <button className="btn btn-danger" type="button" disabled={busy} onClick={() => void removeProduct(item.id)}>{t.shop.remove}</button> : null}
               </div>

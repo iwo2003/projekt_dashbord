@@ -1,14 +1,14 @@
 # Helios
 
-Helios to panel na własny VPS. Z przeglądarki tworzysz serwery gier, strony WWW, skrzynki pocztowe i boty Discord. Każda gra działa w osobnym kontenerze Docker. Panel jest po polsku i po angielsku.
+Helios to panel na własny VPS. Z przeglądarki tworzysz serwery gier, strony WWW, skrzynki pocztowe, boty Discord i sklep z nagrodami na serwer. Każda gra działa w osobnym kontenerze Docker. Panel jest po polsku i po angielsku.
 
-Helios is a panel for your own VPS. From the browser you create game servers, websites, mailboxes, and Discord bots. Each game runs in its own Docker container. The panel is in Polish and in English.
+Helios is a panel for your own VPS. From the browser you create game servers, websites, mailboxes, Discord bots, and a shop that sends rewards on a server. Each game runs in its own Docker container. The panel is in Polish and in English.
 
 Gry / games: Minecraft (Paper albo Vanilla), Counter-Strike 2, Garry's Mod, Farming Simulator 25, Team Fortress 2, GTA V (FiveM).
 
-Licencja / license: wolno używać i zmieniać na własne potrzeby, także na serwerze, który sam prowadzisz. Nie wolno sprzedawać Heliosa ani zmienionej wersji jako własnego produktu, podpisywać go swoim nazwiskiem ani usuwać informacji o autorze. Pełny tekst jest w pliku `LICENSE`.
+Licencja / license: wolno używać i zmieniać na własne potrzeby, także na serwerze, który sam prowadzisz. Nie wolno sprzedawać Heliosa ani zmienionej wersji jako własnego produktu, podpisywać go swoim nazwiskiem ani usuwać informacji o autorze. Program jest udostępniany tak, jak jest. Autor nie bierze odpowiedzialności za używanie panelu, w granicach, w jakich prawo na to pozwala. Pełny tekst jest w pliku `LICENSE`.
 
-You may use and modify it for yourself, including a server you run. You may not sell Helios or a changed version as your own product, put your name on it, or remove the author notice. The full text is in `LICENSE`.
+You may use and modify it for yourself, including a server you run. You may not sell Helios or a changed version as your own product, put your name on it, or remove the author notice. The program is provided as is. The author takes no responsibility for using the panel, as far as the law allows. The full text is in `LICENSE`.
 
 ## Jedna komenda / One command
 
@@ -30,7 +30,9 @@ The repository has to be public. Otherwise GitHub returns 404 and the command do
 
 ## Po polsku
 
-Przy pierwszym wejściu zakładasz konto właściciela. Hasło: minimum 10 znaków, litera i cyfra. Od razu możesz włączyć dwuetapowe logowanie. Kolejne osoby dodajesz w panelu i ograniczasz im uprawnienia.
+Przy pierwszym wejściu zakładasz konto właściciela. Hasło: minimum 10 znaków, litera i cyfra. Od razu możesz włączyć dwuetapowe logowanie: kod z aplikacji albo Windows Hello (odcisk palca, twarz albo PIN Windows). Windows Hello działa tylko po HTTPS. Kolejne osoby dodajesz w panelu i ograniczasz im uprawnienia.
+
+Sklep jest w panelu, z dopiskiem „wersja beta”. Gracz wchodzi na subdomenę, na przykład `sklep.domena.pl`, wybiera grę albo trafia od razu na subdomenę jednej gry. Płatność: Przelewy24, Stripe albo PayPal. Stripe potrzebuje tylko klucza Secret, tego od `sk_`. Produkt dodajesz w Sklep / serwer: nazwa, cena, opcjonalne zdjęcie (JPG, PNG, WEBP albo GIF, do 2 MB) i dostawa. Dostawa wyłączona znaczy, że panel sam nie wysyła nagrody. Komendy idą do konsoli, a wtyczka Helios robi to z gry. W komendzie są `{nick}`, `{steam}` i `{fivem}`. Formularz zakupu pokazuje SteamID tylko przy CS2, Garry's Mod i Team Fortress 2, a licencję FiveM tylko przy GTA. Kod rabatowy albo voucher tworzysz w sklepie. Jest pięć szablonów wyglądu. Przed płatnością kupujący widzi politykę prywatności, płatności i zwrotów. Dane sprzedawcy (nazwa, adres, e-mail) muszą być uzupełnione, inaczej sklep nie przyjmie płatności.
 
 Port `3000` musi być otwarty w zaporze dostawcy VPS. Panel i strony po domenie używają też portów `80` i `443`. Skrypt dopuszcza je w `ufw`, razem z grami:
 
@@ -66,7 +68,9 @@ Dane panelu, światy i kopie zostają w `/opt/helios/data`. Nie kasuj tego katal
 
 ## In English
 
-On the first visit you create the owner account. The password needs at least 10 characters, with a letter and a digit. You can turn on two-step sign-in right away. You add other people in the panel and limit what they can do.
+On the first visit you create the owner account. The password needs at least 10 characters, with a letter and a digit. You can turn on two-step sign-in right away: a code from an app, or Windows Hello (fingerprint, face, or the Windows PIN). Windows Hello works only over HTTPS. You add other people in the panel and limit what they can do.
+
+The shop is in the panel, marked beta. A player opens a subdomain such as `shop.example.com`, picks a game, or lands on a subdomain that opens only one game. Payment is Przelewy24, Stripe, or PayPal. Stripe needs only the secret key, the one that starts with `sk_`. You add a product under Shop / server: name, price, an optional picture (JPG, PNG, WEBP, or GIF, up to 2 MB), and delivery. Delivery off means the panel does not send the reward by itself. Console commands are sent by the panel. The Helios plugin does it from inside the game. A command can use `{nick}`, `{steam}`, and `{fivem}`. Checkout asks for a SteamID only for CS2, Garry's Mod, and Team Fortress 2, and for a FiveM license only for GTA. You create a discount code or a voucher in the shop. There are five looks to choose from. Before paying, the buyer sees the privacy, payment, and refund policies. The seller name, address, and email must be filled in, or the shop will not take payment.
 
 Port `3000` must be open in the VPS provider firewall. The panel and hosted sites also use ports `80` and `443`. The script allows those in `ufw`, along with the games:
 

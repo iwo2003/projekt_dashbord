@@ -212,3 +212,154 @@ textarea {
 .nav-link[data-active="true"] {
   box-shadow: inset 0 0 0 1px rgba(245, 185, 66, 0.35);
 }
+
+html[data-shop="night"] body {
+  color: #ece9ff;
+  background:
+    radial-gradient(800px 420px at 0% 0%, rgba(124, 58, 237, 0.38), transparent 55%),
+    radial-gradient(700px 380px at 100% 8%, rgba(34, 211, 238, 0.16), transparent 50%),
+    #07060f;
+}
+html[data-shop="night"] .card {
+  background: rgba(18, 16, 32, 0.92);
+  border-color: rgba(167, 139, 250, 0.32);
+}
+html[data-shop="night"] .btn-primary {
+  background: linear-gradient(90deg, #7c3aed, #22d3ee);
+  color: white;
+}
+html[data-shop="night"] .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(90deg, #8b5cf6, #67e8f9);
+}
+html[data-shop="night"] .text-fog {
+  color: #b7b0d4;
+}
+html[data-shop="night"] .field:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.22);
+}
+html[data-shop="night"] .shop-product[data-picked="true"] {
+  box-shadow: inset 0 0 0 1px #c4b5fd;
+}
+
+html[data-shop="paper"] body {
+  color: #1c1915;
+  background:
+    radial-gradient(900px 420px at 0% 0%, rgba(245, 185, 66, 0.18), transparent 50%),
+    #f4efe6;
+}
+html[data-shop="paper"] body::before {
+  background-image: radial-gradient(rgba(80, 60, 30, 0.16) 0.7px, transparent 0.7px);
+}
+html[data-shop="paper"] .card {
+  background: #fffdf8;
+  border-color: #e4dccf;
+  box-shadow: 0 16px 40px rgba(80, 50, 20, 0.06);
+}
+html[data-shop="paper"] .btn-primary {
+  background: #1c1915;
+  color: #f4efe6;
+}
+html[data-shop="paper"] .btn-primary:hover:not(:disabled) {
+  background: #3a332b;
+}
+html[data-shop="paper"] .btn-ghost {
+  background: transparent;
+  color: #1c1915;
+  border-color: #d9d0c3;
+}
+html[data-shop="paper"] .field {
+  background: white;
+  color: #1c1915;
+  border-color: #d9d0c3;
+}
+html[data-shop="paper"] .text-fog {
+  color: #5c564c;
+}
+html[data-shop="paper"] .lang-switch {
+  border-color: #d9d0c3;
+  background: white;
+}
+html[data-shop="paper"] .shop-product[data-picked="true"] {
+  box-shadow: inset 0 0 0 2px #1c1915;
+}
+
+html[data-shop="terminal"] body {
+  color: #b6f5c2;
+  background: #050805;
+  font-family: var(--font-mono);
+}
+html[data-shop="terminal"] body::before {
+  display: none;
+}
+html[data-shop="terminal"] .card,
+html[data-shop="terminal"] .field,
+html[data-shop="terminal"] .btn,
+html[data-shop="terminal"] .lang-switch {
+  border-radius: 0;
+}
+html[data-shop="terminal"] .card {
+  background: #0a120c;
+  border-color: #1f7a3a;
+  box-shadow: none;
+}
+html[data-shop="terminal"] .btn-primary {
+  background: #12331c;
+  color: #b6f5c2;
+  border-color: #3ee07a;
+}
+html[data-shop="terminal"] .btn-ghost {
+  background: transparent;
+  color: #b6f5c2;
+  border-color: #1f7a3a;
+}
+html[data-shop="terminal"] .field {
+  background: #050805;
+  color: #b6f5c2;
+  border-color: #1f7a3a;
+}
+html[data-shop="terminal"] .text-fog {
+  color: #6fbf84;
+}
+html[data-shop="terminal"] .shop-product[data-picked="true"] {
+  box-shadow: inset 0 0 0 1px #3ee07a;
+}
+
+html[data-shop="arcade"] body {
+  color: #fff4fb;
+  background: repeating-linear-gradient(90deg, #1a0a24 0 18px, #140818 18px 36px);
+}
+html[data-shop="arcade"] body::before {
+  display: none;
+}
+html[data-shop="arcade"] .card {
+  background: #2a1038;
+  border: 3px solid #ff4fd8;
+  border-radius: 16px;
+  box-shadow: 6px 6px 0 #f5b942;
+}
+html[data-shop="arcade"] .btn {
+  border-radius: 10px;
+}
+html[data-shop="arcade"] .btn-primary {
+  background: #f5b942;
+  color: #1a0a24;
+  border: 3px solid #1a0a24;
+}
+html[data-shop="arcade"] .btn-ghost {
+  background: #3a1450;
+  color: #fff4fb;
+  border: 3px solid #ff4fd8;
+}
+html[data-shop="arcade"] .field {
+  background: #1a0a24;
+  color: #fff4fb;
+  border: 3px solid #f5b942;
+  border-radius: 10px;
+}
+html[data-shop="arcade"] .text-fog {
+  color: #f0b7de;
+}
+html[data-shop="arcade"] .shop-product[data-picked="true"] {
+  border-color: #f5b942;
+}

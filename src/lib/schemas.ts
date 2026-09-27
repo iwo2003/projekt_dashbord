@@ -207,6 +207,7 @@ export const shopSettingsSchema = z.object({
   sellerAddress: z.string().trim().max(300).optional(),
   sellerEmail: z.string().trim().max(120).refine((value) => value === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)).optional(),
   sellerNip: z.string().trim().max(20).optional(),
+  template: z.enum(["helios", "night", "paper", "terminal", "arcade"]).optional(),
   gameHosts: z.object({
     minecraft: z.string().trim().max(253).optional(),
     cs2: z.string().trim().max(253).optional(),

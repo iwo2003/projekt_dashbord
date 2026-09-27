@@ -67,7 +67,7 @@ export function Modal({
 export function LanguageSwitch() {
   const { lang, setLang, t } = useI18n();
   return (
-    <div className="inline-flex rounded-full border border-white/10 bg-white/5 p-1 text-xs" aria-label={t.language}>
+    <div className="lang-switch inline-flex rounded-full border border-white/10 bg-white/5 p-1 text-xs" aria-label={t.language}>
       {(["pl", "en"] as const).map((item) => (
         <button
           key={item}

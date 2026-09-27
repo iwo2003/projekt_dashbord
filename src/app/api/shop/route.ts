@@ -72,7 +72,7 @@ export async function POST(request: Request) {
   });
   if (!saved.ok) return apiError(saved.error, 400);
   logEvent(auth.user, "shop.product", { name: parsed.data.name });
-  return Response.json(shopAdminState());
+  return Response.json({ ...shopAdminState(), savedId: saved.product.id });
 }
 
 export async function DELETE(request: Request) {
@@ -85,7 +85,7 @@ export async function DELETE(request: Request) {
     logEvent(auth.user, "shop.code", { id: codeId });
     return Response.json(shopAdminState());
   }
-  const removed = removeShopProduct(id);
+  const removed = await removeShopProduct(id);
   if (!removed.ok) return apiError(removed.error, 404);
   logEvent(auth.user, "shop.product", { id });
   return Response.json(shopAdminState());

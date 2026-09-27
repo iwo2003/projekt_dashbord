@@ -4,6 +4,13 @@ export const APP_NAME = "Helios";
 
 export const SHOP_GAMES = ["minecraft", "cs2", "gmod", "tf2", "gta", "fs25"] as const satisfies readonly Game[];
 
+export const SHOP_TEMPLATES = ["helios", "night", "paper", "terminal", "arcade"] as const;
+export type ShopTemplate = (typeof SHOP_TEMPLATES)[number];
+
+export function shopTemplate(value: string): ShopTemplate {
+  return (SHOP_TEMPLATES as readonly string[]).includes(value) ? (value as ShopTemplate) : "helios";
+}
+
 export const MC_VERSIONS = [
   "LATEST",
   "26.3",

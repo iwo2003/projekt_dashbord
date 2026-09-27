@@ -6,6 +6,7 @@ import { api } from "@/lib/client";
 import type { Lang } from "@/lib/i18n";
 import { LanguageSwitch } from "./ui";
 import { useI18n } from "./i18n-provider";
+import { ShopFrame } from "./shop-theme";
 
 type Seller = { name: string; address: string; email: string; nip: string };
 type Kind = "privacy" | "payment" | "refund";
@@ -27,11 +28,13 @@ export function ShopLegalLinks() {
 export function ShopLegal({ kind }: { kind: Kind }) {
   const { lang, t } = useI18n();
   const [seller, setSeller] = useState<Seller>(emptySeller);
+  const [template, setTemplate] = useState("helios");
 
   useEffect(() => {
-    void api<{ seller?: Seller }>("/api/shop/public")
+    void api<{ seller?: Seller; template?: string }>("/api/shop/public")
       .then((data) => {
         if (data.seller) setSeller(data.seller);
+        if (data.template) setTemplate(data.template);
       })
       .catch(() => undefined);
   }, []);
@@ -39,7 +42,7 @@ export function ShopLegal({ kind }: { kind: Kind }) {
   const doc = documents(lang, seller)[kind];
 
   return (
-    <div className="mx-auto min-h-screen max-w-3xl space-y-6 px-5 py-8">
+    <ShopFrame template={template}>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-semibold tracking-tight">{doc.title}</h1>
         <LanguageSwitch />
@@ -58,7 +61,7 @@ export function ShopLegal({ kind }: { kind: Kind }) {
         </section>
       ))}
       <ShopLegalLinks />
-    </div>
+    </ShopFrame>
   );
 }
 

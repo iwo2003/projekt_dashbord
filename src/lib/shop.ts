@@ -12,6 +12,7 @@ import {
   getShopCode,
   getShopOrder,
   getShopProduct,
+  setShopProductImage,
   insertShopOrder,
   insertShopProduct,
   insertShopCode,
@@ -35,7 +36,7 @@ import {
 } from "./db";
 import { playerSnapshot } from "./players";
 import { sendCommand } from "./servers";
-import { SHOP_GAMES } from "./constants";
+import { SHOP_GAMES, shopTemplate } from "./constants";
 import { pluginFiles, type PluginFile } from "./shop-plugin";
 import { enabledProviders, readStripeSecret, type ShopProvider } from "./shop-pay";
 import type { Game, ServerRecord } from "./types";
@@ -98,6 +99,7 @@ export function saveShopSettings(input: {
   sellerEmail?: string;
   sellerNip?: string;
   gameHosts?: Partial<Record<(typeof SHOP_GAMES)[number], string>>;
+  template?: string;
 }) {
   const previousHost = getSetting("shop_host");
   const host = cleanHost(input.host);
@@ -123,6 +125,7 @@ export function saveShopSettings(input: {
   setSetting("shop_paypal_sandbox", input.paypalSandbox ? "1" : "");
   setSetting("shop_p24_sandbox", input.p24Sandbox ? "1" : "");
   if (input.enabled !== undefined) setSetting("shop_enabled", input.enabled ? "1" : "0");
+  if (input.template !== undefined) setSetting("shop_template", shopTemplate(input.template));
   keepSecret(input.paypalClient, "shop_paypal_client");
   keepSecret(input.paypalSecret, "shop_paypal_secret");
   if (stripeKey?.ok) setSetting("shop_stripe_secret", stripeKey.secret);
@@ -148,6 +151,7 @@ export function shopAdminState() {
   }));
   return {
     host: getSetting("shop_host"),
+    template: shopTemplate(getSetting("shop_template")),
     enabled: getSetting("shop_enabled") !== "0",
     panelUrl: shopPanelUrl(),
     stripe: getSetting("shop_stripe") === "1",
@@ -183,24 +187,41 @@ export function shopSeller() {
   };
 }
 
+function asksFor(game: string, commands: string) {
+  const text = commands.toLowerCase();
+  return {
+    askSteam: game === "cs2" || game === "gmod" || game === "tf2" || text.includes("{steam}"),
+    askFivem: game === "gta" || text.includes("{fivem}"),
+  };
+}
+
 export function shopCatalog(requestHost = "") {
   const open = getSetting("shop_enabled") !== "0";
   const servers = new Map(listServers().map((server) => [server.id, server]));
   const lockedGame = shopGameForHost(requestHost);
-  if (!open) return { host: getSetting("shop_host"), open: false, providers: [], products: [], seller: shopSeller(), lockedGame };
+  const template = shopTemplate(getSetting("shop_template"));
+  const hasCodes = listShopCodes().some((code) => code.uses_max === 0 || code.uses_count < code.uses_max);
+  if (!open) return { host: getSetting("shop_host"), open: false, template, hasCodes: false, providers: [], products: [], seller: shopSeller(), lockedGame };
   return {
     host: getSetting("shop_host"),
+    template,
     open: true,
     lockedGame,
+    hasCodes,
     providers: enabledProviders(),
-    products: listShopProducts().map((product) => ({
+    products: listShopProducts().map((product) => {
+      const game = servers.get(product.server_id)?.game ?? "";
+      return {
         id: product.id,
         name: product.name,
         description: product.description,
         priceCents: product.price_cents,
         serverName: servers.get(product.server_id)?.name ?? "",
-        game: servers.get(product.server_id)?.game ?? "",
-      })),
+        game,
+        image: product.image ? `/api/shop/image?id=${product.id}` : "",
+        ...asksFor(game, product.commands),
+      };
+    }),
     seller: shopSeller(),
   };
 }
@@ -235,12 +256,14 @@ export function saveShopProduct(input: {
     delivery: input.delivery,
     wait_online: input.waitOnline === false ? 0 : 1,
     commands,
+    image: "",
     created_at: Date.now(),
   };
   if (input.id) {
     const previous = getShopProduct(input.id);
     if (!previous) return { ok: false as const, error: "not_found" as const };
     row.created_at = previous.created_at;
+    row.image = previous.image;
     updateShopProduct(row);
   } else {
     insertShopProduct(row);
@@ -279,9 +302,53 @@ function priced(cents: number, promo: ShopCodeRow) {
   return Math.max(0, cents - promo.amount_cents);
 }
 
-export function removeShopProduct(id: string) {
-  if (!getShopProduct(id)) return { ok: false as const, error: "not_found" as const };
+const SHOP_IMAGE_DIR = path.join(process.cwd(), "data", "shop-images");
+
+export function shopImageFile(name: string) {
+  const base = path.basename(name);
+  if (!/^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(base)) return null;
+  return path.join(SHOP_IMAGE_DIR, base);
+}
+
+export function shopImageKind(data: Buffer) {
+  if (data.length > 2 * 1024 * 1024) return { ok: false as const, error: "too_large" as const };
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return { ok: true as const, ext: "jpg", mime: "image/jpeg" };
+  if (data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) return { ok: true as const, ext: "png", mime: "image/png" };
+  if (data.length >= 6 && data.subarray(0, 6).toString("ascii") === "GIF87a") return { ok: true as const, ext: "gif", mime: "image/gif" };
+  if (data.length >= 6 && data.subarray(0, 6).toString("ascii") === "GIF89a") return { ok: true as const, ext: "gif", mime: "image/gif" };
+  if (data.length >= 12 && data.subarray(0, 4).toString("ascii") === "RIFF" && data.subarray(8, 12).toString("ascii") === "WEBP") return { ok: true as const, ext: "webp", mime: "image/webp" };
+  return { ok: false as const, error: "image_type" as const };
+}
+
+export function shopImageMime(name: string) {
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".webp")) return "image/webp";
+  if (name.endsWith(".gif")) return "image/gif";
+  return "image/jpeg";
+}
+
+export async function saveShopImage(productId: string, data: Buffer) {
+  const product = getShopProduct(productId);
+  if (!product) return { ok: false as const, error: "not_found" as const };
+  const kind = shopImageKind(data);
+  if (!kind.ok) return kind;
+  await fs.mkdir(SHOP_IMAGE_DIR, { recursive: true });
+  const filename = `${product.id}.${kind.ext}`;
+  if (product.image && product.image !== filename) {
+    const previous = shopImageFile(product.image);
+    if (previous) await fs.unlink(previous).catch(() => undefined);
+  }
+  await fs.writeFile(path.join(SHOP_IMAGE_DIR, filename), data);
+  setShopProductImage(product.id, filename);
+  return { ok: true as const };
+}
+
+export async function removeShopProduct(id: string) {
+  const product = getShopProduct(id);
+  if (!product) return { ok: false as const, error: "not_found" as const };
   deleteShopProduct(id);
+  const file = shopImageFile(product.image);
+  if (file) await fs.unlink(file).catch(() => undefined);
   return { ok: true as const };
 }
 
@@ -382,6 +449,9 @@ export function createShopOrder(input: {
   const seller = shopSeller();
   if (!seller.name || !seller.address || !seller.email) return { ok: false as const, error: "seller_missing" as const };
   if (!product) return { ok: false as const, error: "not_found" as const };
+  const ask = asksFor(getServer(product.server_id)?.game ?? "", product.commands);
+  if (ask.askSteam && !(input.steam ?? "").trim()) return { ok: false as const, error: "validation" as const };
+  if (ask.askFivem && !(input.fivem ?? "").trim()) return { ok: false as const, error: "validation" as const };
   let price = product.price_cents;
   let codeId = "";
   const rawCode = (input.code ?? "").trim();
