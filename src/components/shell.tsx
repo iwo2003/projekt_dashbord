@@ -14,6 +14,7 @@ import {
   Server,
   Settings,
   Shield,
+  ShoppingBag,
   Globe,
   Bot,
   Users,
@@ -34,6 +35,7 @@ const links = [
   { href: "/databases", key: "databases", icon: Database, show: (user: PublicUser) => can(user, "databases.view") },
   { href: "/mail", key: "mail", icon: Mail, show: (user: PublicUser) => can(user, "mail.view") },
   { href: "/sites", key: "sites", icon: Globe, show: (user: PublicUser) => can(user, "sites.view") },
+  { href: "/shop", key: "shop", icon: ShoppingBag, beta: true, show: (user: PublicUser) => can(user, "shop.view") },
   { href: "/bots", key: "bots", icon: Bot, show: (user: PublicUser) => can(user, "bots.view") },
   { href: "/firewall", key: "firewall", icon: Shield, show: (user: PublicUser) => can(user, "firewall.view") },
   { href: "/users", key: "users", icon: Users, show: (user: PublicUser) => can(user, "users.view") },
@@ -107,7 +109,8 @@ export function Shell({ user, children }: { user: PublicUser; children: React.Re
                 onClick={() => setOpen(false)}
               >
                 <Icon size={18} />
-                {t.nav[item.key]}
+                <span className="min-w-0 flex-1">{t.nav[item.key]}</span>
+                {"beta" in item && item.beta ? <span className="text-[11px] text-coral">{t.nav.shopBeta}</span> : null}
               </Link>
             );
           })}

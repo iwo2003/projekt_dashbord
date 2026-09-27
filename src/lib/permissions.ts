@@ -24,6 +24,8 @@ export const PERMISSIONS = [
   "sites.manage",
   "bots.view",
   "bots.manage",
+  "shop.view",
+  "shop.manage",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

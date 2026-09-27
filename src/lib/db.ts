@@ -209,6 +209,75 @@ function database() {
         created_by TEXT,
         created_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS webauthn_credentials (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        public_key TEXT NOT NULL,
+        counter INTEGER NOT NULL DEFAULT 0,
+        transports TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_id);
+
+      CREATE TABLE IF NOT EXISTS webauthn_challenges (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        challenge TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS shop_products (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        price_cents INTEGER NOT NULL,
+        delivery TEXT NOT NULL DEFAULT 'off',
+        wait_online INTEGER NOT NULL DEFAULT 1,
+        commands TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS shop_orders (
+        id TEXT PRIMARY KEY,
+        product_id TEXT NOT NULL,
+        server_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        nick TEXT NOT NULL,
+        email TEXT NOT NULL,
+        steam TEXT NOT NULL DEFAULT '',
+        fivem TEXT NOT NULL DEFAULT '',
+        price_cents INTEGER NOT NULL,
+        delivery TEXT NOT NULL,
+        wait_online INTEGER NOT NULL,
+        commands TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        provider_ref TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        error TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        paid_at INTEGER,
+        consent INTEGER NOT NULL DEFAULT 0,
+        code_id TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE TABLE IF NOT EXISTS shop_codes (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        percent INTEGER NOT NULL DEFAULT 0,
+        amount_cents INTEGER NOT NULL DEFAULT 0,
+        uses_max INTEGER NOT NULL DEFAULT 0,
+        uses_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS shop_agents (
+        server_id TEXT PRIMARY KEY,
+        token TEXT NOT NULL
+      );
     `);
     globalForDb.heliosDb = db;
   }
@@ -283,6 +352,8 @@ function database() {
     mysqlSchemaReady = true;
   }
   ensureSitePhp(globalForDb.heliosDb);
+  ensureShopConsent(globalForDb.heliosDb);
+  ensureShopCode(globalForDb.heliosDb);
   return globalForDb.heliosDb;
 }
 
@@ -290,6 +361,19 @@ function ensureSitePhp(db: DatabaseSync) {
   const columns = db.prepare("PRAGMA table_info(sites)").all() as { name: string }[];
   if (!columns.length || columns.some((column) => column.name === "php")) return;
   db.exec("ALTER TABLE sites ADD COLUMN php INTEGER NOT NULL DEFAULT 0");
+}
+
+function ensureShopConsent(db: DatabaseSync) {
+  const columns = db.prepare("PRAGMA table_info(shop_orders)").all() as { name: string }[];
+  if (!columns.length || columns.some((column) => column.name === "consent")) return;
+  db.exec("ALTER TABLE shop_orders ADD COLUMN consent INTEGER NOT NULL DEFAULT 0");
+}
+
+function ensureShopCode(db: DatabaseSync) {
+  const columns = db.prepare("PRAGMA table_info(shop_orders)").all() as { name: string }[];
+  if (columns.length && !columns.some((column) => column.name === "code_id")) {
+    db.exec("ALTER TABLE shop_orders ADD COLUMN code_id TEXT NOT NULL DEFAULT ''");
+  }
 }
 
 function grantDatabasePermissions(db: DatabaseSync) {
@@ -304,7 +388,7 @@ function grantDatabasePermissions(db: DatabaseSync) {
       list = [];
     }
     let changed = false;
-    for (const permission of ["databases.view", "databases.manage", "mail.view", "mail.manage", "firewall.view", "firewall.manage", "panel.manage", "sites.view", "sites.manage", "bots.view", "bots.manage"]) {
+    for (const permission of ["databases.view", "databases.manage", "mail.view", "mail.manage", "firewall.view", "firewall.manage", "panel.manage", "sites.view", "sites.manage", "bots.view", "bots.manage", "shop.view", "shop.manage"]) {
       if (!list.includes(permission)) {
         list.push(permission);
         changed = true;
@@ -361,6 +445,7 @@ export function toPublicUser(row: UserRow): PublicUser {
     role: row.role,
     permissions: sanitizePermissions(Array.isArray(permissions) ? (permissions as string[]) : []),
     totpEnabled: row.totp_enabled === 1,
+    helloEnabled: countHello(row.id) > 0,
     backupCodesLeft: Array.isArray(codes) ? codes.length : 0,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
@@ -462,6 +547,68 @@ export function userPasswordHash(id: string) {
   return findUserById(id)?.password_hash ?? null;
 }
 
+type HelloRow = {
+  id: string;
+  user_id: string;
+  public_key: string;
+  counter: number;
+  transports: string;
+};
+
+export function countHello(userId: string) {
+  const row = one<{ c: number }>("SELECT COUNT(*) AS c FROM webauthn_credentials WHERE user_id = ?", userId);
+  return row?.c ?? 0;
+}
+
+export function listHello(userId: string) {
+  return many<HelloRow>("SELECT id, user_id, public_key, counter, transports FROM webauthn_credentials WHERE user_id = ?", userId);
+}
+
+export function helloCredential(userId: string, id: string) {
+  return one<HelloRow>(
+    "SELECT id, user_id, public_key, counter, transports FROM webauthn_credentials WHERE user_id = ? AND id = ?",
+    userId,
+    id,
+  );
+}
+
+export function insertHello(input: { id: string; userId: string; publicKey: string; counter: number; transports: string[] }) {
+  database()
+    .prepare(
+      "INSERT INTO webauthn_credentials (id, user_id, public_key, counter, transports, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .run(input.id, input.userId, input.publicKey, input.counter, JSON.stringify(input.transports), Date.now());
+}
+
+export function updateHelloCounter(id: string, counter: number) {
+  database().prepare("UPDATE webauthn_credentials SET counter = ? WHERE id = ?").run(counter, id);
+}
+
+export function deleteHello(userId: string) {
+  database().prepare("DELETE FROM webauthn_credentials WHERE user_id = ?").run(userId);
+}
+
+export function saveWebauthnChallenge(id: string, userId: string, challenge: string) {
+  const db = database();
+  db.prepare("DELETE FROM webauthn_challenges WHERE id = ?").run(id);
+  db.prepare("INSERT INTO webauthn_challenges (id, user_id, challenge, expires_at) VALUES (?, ?, ?, ?)").run(
+    id,
+    userId,
+    challenge,
+    Date.now() + 5 * 60 * 1000,
+  );
+}
+
+export function takeWebauthnChallenge(id: string, userId: string) {
+  const row = one<{ challenge: string; expires_at: number; user_id: string }>(
+    "SELECT challenge, expires_at, user_id FROM webauthn_challenges WHERE id = ?",
+    id,
+  );
+  database().prepare("DELETE FROM webauthn_challenges WHERE id = ?").run(id);
+  if (!row || row.user_id !== userId || row.expires_at < Date.now()) return null;
+  return row.challenge;
+}
+
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function insertSession(idHash: string, userId: string) {
@@ -491,6 +638,7 @@ export function purgeExpired() {
   const now = Date.now();
   database().prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
   database().prepare("DELETE FROM login_challenges WHERE expires_at <= ?").run(now);
+  database().prepare("DELETE FROM webauthn_challenges WHERE expires_at <= ?").run(now);
 }
 
 export function insertChallenge(id: string, userId: string) {
@@ -804,6 +952,207 @@ export function setSetting(key: string, value: string) {
       'INSERT INTO panel_settings ("key", value) VALUES (?, ?) ON CONFLICT("key") DO UPDATE SET value = excluded.value',
     )
     .run(key, value);
+}
+
+export type ShopProductRow = {
+  id: string;
+  server_id: string;
+  name: string;
+  description: string;
+  price_cents: number;
+  delivery: "off" | "console" | "plugin";
+  wait_online: number;
+  commands: string;
+  created_at: number;
+};
+
+export type ShopOrderRow = {
+  id: string;
+  product_id: string;
+  server_id: string;
+  name: string;
+  nick: string;
+  email: string;
+  steam: string;
+  fivem: string;
+  price_cents: number;
+  delivery: "off" | "console" | "plugin";
+  wait_online: number;
+  commands: string;
+  provider: string;
+  provider_ref: string;
+  status: string;
+  error: string;
+  created_at: number;
+  paid_at: number | null;
+  consent: number;
+  code_id: string;
+};
+
+export function listShopProducts() {
+  return many<ShopProductRow>("SELECT * FROM shop_products ORDER BY created_at DESC");
+}
+
+export function getShopProduct(id: string) {
+  return one<ShopProductRow>("SELECT * FROM shop_products WHERE id = ?", id);
+}
+
+export function insertShopProduct(row: ShopProductRow) {
+  database()
+    .prepare(
+      `INSERT INTO shop_products (
+        id, server_id, name, description, price_cents, delivery, wait_online, commands, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(row.id, row.server_id, row.name, row.description, row.price_cents, row.delivery, row.wait_online, row.commands, row.created_at);
+}
+
+export function updateShopProduct(row: ShopProductRow) {
+  database()
+    .prepare(
+      `UPDATE shop_products
+       SET server_id = ?, name = ?, description = ?, price_cents = ?, delivery = ?, wait_online = ?, commands = ?
+       WHERE id = ?`,
+    )
+    .run(row.server_id, row.name, row.description, row.price_cents, row.delivery, row.wait_online, row.commands, row.id);
+}
+
+export function deleteShopProduct(id: string) {
+  database().prepare("DELETE FROM shop_products WHERE id = ?").run(id);
+}
+
+export type ShopCodeRow = {
+  id: string;
+  kind: "discount" | "voucher";
+  code: string;
+  percent: number;
+  amount_cents: number;
+  uses_max: number;
+  uses_count: number;
+  created_at: number;
+};
+
+export function listShopCodes() {
+  return many<ShopCodeRow>("SELECT * FROM shop_codes ORDER BY created_at DESC");
+}
+
+export function getShopCode(code: string) {
+  return one<ShopCodeRow>("SELECT * FROM shop_codes WHERE code = ? COLLATE NOCASE", code.trim());
+}
+
+export function insertShopCode(row: ShopCodeRow) {
+  database()
+    .prepare(
+      `INSERT INTO shop_codes (id, kind, code, percent, amount_cents, uses_max, uses_count, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(row.id, row.kind, row.code, row.percent, row.amount_cents, row.uses_max, row.uses_count, row.created_at);
+}
+
+export function deleteShopCode(id: string) {
+  database().prepare("DELETE FROM shop_codes WHERE id = ?").run(id);
+}
+
+export function claimShopCode(id: string) {
+  const result = database()
+    .prepare("UPDATE shop_codes SET uses_count = uses_count + 1 WHERE id = ? AND (uses_max = 0 OR uses_count < uses_max)")
+    .run(id);
+  return Number(result.changes) === 1;
+}
+
+export function releaseShopCode(id: string) {
+  if (!id) return;
+  database()
+    .prepare("UPDATE shop_codes SET uses_count = CASE WHEN uses_count > 0 THEN uses_count - 1 ELSE 0 END WHERE id = ?")
+    .run(id);
+}
+
+export function insertShopOrder(row: ShopOrderRow) {
+  database()
+    .prepare(
+      `INSERT INTO shop_orders (
+        id, product_id, server_id, name, nick, email, steam, fivem, price_cents, delivery, wait_online,
+        commands, provider, provider_ref, status, error, created_at, paid_at, consent, code_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.id,
+      row.product_id,
+      row.server_id,
+      row.name,
+      row.nick,
+      row.email,
+      row.steam,
+      row.fivem,
+      row.price_cents,
+      row.delivery,
+      row.wait_online,
+      row.commands,
+      row.provider,
+      row.provider_ref,
+      row.status,
+      row.error,
+      row.created_at,
+      row.paid_at,
+      row.consent,
+      row.code_id,
+    );
+}
+
+export function getShopOrder(id: string) {
+  return one<ShopOrderRow>("SELECT * FROM shop_orders WHERE id = ?", id);
+}
+
+export function listShopOrders(limit = 40) {
+  return many<ShopOrderRow>("SELECT * FROM shop_orders ORDER BY created_at DESC LIMIT ?", limit);
+}
+
+export function listQueuedShopOrders(limit = 10) {
+  return many<ShopOrderRow>("SELECT * FROM shop_orders WHERE status = 'queued' AND delivery = 'console' ORDER BY paid_at ASC LIMIT ?", limit);
+}
+
+export function listPluginShopOrders(serverId: string) {
+  return many<ShopOrderRow>(
+    "SELECT * FROM shop_orders WHERE status = 'queued' AND delivery = 'plugin' AND server_id = ? ORDER BY paid_at ASC LIMIT 20",
+    serverId,
+  );
+}
+
+export function claimShopOrder(id: string) {
+  const result = database().prepare("UPDATE shop_orders SET status = 'sending' WHERE id = ? AND status = 'queued'").run(id);
+  return Number(result.changes) === 1;
+}
+
+export function releaseShopSending() {
+  database().prepare("UPDATE shop_orders SET status = 'queued' WHERE status = 'sending'").run();
+}
+
+export function setShopOrder(id: string, patch: { status?: string; error?: string; providerRef?: string; paidAt?: number | null }) {
+  const row = getShopOrder(id);
+  if (!row) return;
+  database()
+    .prepare("UPDATE shop_orders SET status = ?, error = ?, provider_ref = ?, paid_at = ? WHERE id = ?")
+    .run(
+      patch.status ?? row.status,
+      patch.error ?? row.error,
+      patch.providerRef ?? row.provider_ref,
+      patch.paidAt === undefined ? row.paid_at : patch.paidAt,
+      id,
+    );
+}
+
+export function shopAgentToken(serverId: string) {
+  return one<{ token: string }>("SELECT token FROM shop_agents WHERE server_id = ?", serverId)?.token ?? "";
+}
+
+export function saveShopAgent(serverId: string, token: string) {
+  database()
+    .prepare("INSERT INTO shop_agents (server_id, token) VALUES (?, ?) ON CONFLICT(server_id) DO UPDATE SET token = excluded.token")
+    .run(serverId, token);
+}
+
+export function shopAgentServer(token: string) {
+  return one<{ server_id: string }>("SELECT server_id FROM shop_agents WHERE token = ?", token)?.server_id ?? "";
 }
 
 export type ServerSchedule = {

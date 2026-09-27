@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { api } from "@/lib/client";
+import { authenticateHello, helloClientError } from "@/lib/hello-client";
 import { Logo } from "./logo";
 import { ErrorNote, Field, LanguageSwitch } from "./ui";
 import { useI18n } from "./i18n-provider";
@@ -23,7 +24,7 @@ function Brand() {
           <li>{t.nav.users}</li>
         </ul>
       </div>
-      <p className="text-sm text-fog">Docker · TOTP</p>
+      <p className="text-sm text-fog">Docker · TOTP · Windows Hello</p>
     </div>
   );
 }
@@ -72,6 +73,8 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [needsTotp, setNeedsTotp] = useState(false);
+  const [needsHello, setNeedsHello] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -80,12 +83,14 @@ export function LoginForm() {
     setBusy(true);
     setError(null);
     try {
-      const data = await api<{ totpRequired?: boolean; challengeId?: string }>("/api/login", {
+      const data = await api<{ totpRequired?: boolean; totp?: boolean; hello?: boolean; challengeId?: string }>("/api/login", {
         method: "POST",
         body: JSON.stringify({ username, password }),
       });
       if (data.totpRequired && data.challengeId) {
         setChallengeId(data.challengeId);
+        setNeedsTotp(Boolean(data.totp));
+        setNeedsHello(Boolean(data.hello));
         return;
       }
       router.push("/");
@@ -97,6 +102,28 @@ export function LoginForm() {
     }
   }
 
+  async function useHello() {
+    if (!challengeId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const options = await api<Parameters<typeof authenticateHello>[0]>("/api/login/hello", {
+        method: "POST",
+        body: JSON.stringify({ challengeId }),
+      });
+      const response = await authenticateHello(options);
+      await api("/api/login/hello", {
+        method: "POST",
+        body: JSON.stringify({ challengeId, response }),
+      });
+      router.push("/");
+      router.refresh();
+    } catch (caught) {
+      setError(helloClientError(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submitCode(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -131,22 +158,39 @@ export function LoginForm() {
         >
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">
-              {challengeId ? t.auth.totpTitle : t.auth.loginTitle}
+              {challengeId ? (needsHello ? t.auth.helloTitle : t.auth.totpTitle) : t.auth.loginTitle}
             </h1>
-            <p className="mt-2 text-fog">{challengeId ? t.auth.totpLead : t.auth.loginLead}</p>
+            <p className="mt-2 text-fog">
+              {challengeId
+                ? needsHello && needsTotp
+                  ? t.auth.helloAndTotp
+                  : needsHello
+                    ? t.auth.helloLead
+                    : t.auth.totpLead
+                : t.auth.loginLead}
+            </p>
           </div>
           <ErrorNote code={error} />
           {challengeId ? (
-            <Field label={t.auth.totpCode} hint={t.auth.backupHint}>
-              <input
-                className="field tracking-[0.3em]"
-                inputMode="text"
-                autoComplete="one-time-code"
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-                required
-              />
-            </Field>
+            <>
+              {needsHello ? (
+                <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void useHello()}>
+                  {busy ? t.loading : t.auth.helloButton}
+                </button>
+              ) : null}
+              {needsTotp ? (
+                <Field label={t.auth.totpCode} hint={t.auth.backupHint}>
+                  <input
+                    className="field tracking-[0.3em]"
+                    inputMode="text"
+                    autoComplete="one-time-code"
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    required
+                  />
+                </Field>
+              ) : null}
+            </>
           ) : (
             <>
               <Field label={t.auth.username}>
@@ -166,15 +210,19 @@ export function LoginForm() {
               />
             </>
           )}
-          <button className="btn btn-primary" disabled={busy} type="submit">
-            {busy ? t.loading : t.auth.submit}
-          </button>
+          {needsTotp || !challengeId ? (
+            <button className={needsHello ? "btn btn-ghost" : "btn btn-primary"} disabled={busy} type="submit">
+              {busy ? t.loading : t.auth.submit}
+            </button>
+          ) : null}
           {challengeId ? (
             <button
               className="btn btn-quiet"
               type="button"
               onClick={() => {
                 setChallengeId(null);
+                setNeedsHello(false);
+                setNeedsTotp(false);
                 setCode("");
                 setError(null);
               }}

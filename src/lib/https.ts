@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { SHOP_GAMES } from "./constants";
 import { getSetting, listSiteRows, setSetting } from "./db";
 import { dockerPing, ensureImage, getDocker } from "./docker";
 import { writeConfigFile } from "./files";
@@ -65,7 +66,7 @@ export async function httpsRunning() {
 function panelHosts(extra: string[] = []) {
   return [
     ...new Set(
-      [getSetting("panel_host"), getSetting("https_domain"), ...extra]
+      [getSetting("panel_host"), getSetting("https_domain"), getSetting("shop_host"), ...SHOP_GAMES.map((game) => getSetting(`shop_host_${game}`)), ...extra]
         .map((host) => host.trim().toLowerCase())
         .filter((host) => PANEL_HOST.test(host)),
     ),

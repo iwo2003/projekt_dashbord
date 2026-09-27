@@ -1,6 +1,8 @@
-import type { Cs2Mode } from "./types";
+import type { Cs2Mode, Game } from "./types";
 
 export const APP_NAME = "Helios";
+
+export const SHOP_GAMES = ["minecraft", "cs2", "gmod", "tf2", "gta", "fs25"] as const satisfies readonly Game[];
 
 export const MC_VERSIONS = [
   "LATEST",

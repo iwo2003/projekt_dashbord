@@ -30,6 +30,15 @@ export const totpLoginSchema = z.object({
   code: z.string().trim().min(6).max(20),
 });
 
+export const helloLoginSchema = z.object({
+  challengeId: z.string().uuid(),
+  response: z.unknown().optional(),
+});
+
+export const passwordOnlySchema = z.object({
+  password: z.string().min(1).max(128),
+});
+
 export const passwordChangeSchema = z.object({
   current: z.string().min(1).max(128),
   next: passwordSchema,
@@ -179,3 +188,63 @@ export const firewallActionSchema = z.discriminatedUnion("action", [
     proto: z.enum(["tcp", "udp"]),
   }),
 ]);
+
+export const shopSettingsSchema = z.object({
+  host: z.string().trim().max(253),
+  enabled: z.boolean().optional(),
+  stripe: z.boolean(),
+  paypal: z.boolean(),
+  p24: z.boolean(),
+  stripeSecret: z.string().max(500).optional(),
+  paypalClient: z.string().max(200).optional(),
+  paypalSecret: z.string().max(200).optional(),
+  paypalSandbox: z.boolean().optional(),
+  p24Merchant: z.string().max(20).optional(),
+  p24Crc: z.string().max(200).optional(),
+  p24Api: z.string().max(200).optional(),
+  p24Sandbox: z.boolean().optional(),
+  sellerName: z.string().trim().max(160).optional(),
+  sellerAddress: z.string().trim().max(300).optional(),
+  sellerEmail: z.string().trim().max(120).refine((value) => value === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)).optional(),
+  sellerNip: z.string().trim().max(20).optional(),
+  gameHosts: z.object({
+    minecraft: z.string().trim().max(253).optional(),
+    cs2: z.string().trim().max(253).optional(),
+    gmod: z.string().trim().max(253).optional(),
+    tf2: z.string().trim().max(253).optional(),
+    gta: z.string().trim().max(253).optional(),
+    fs25: z.string().trim().max(253).optional(),
+  }).optional(),
+});
+
+export const shopProductSchema = z.object({
+  id: z.string().uuid().optional(),
+  serverId: z.string().uuid(),
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(500).optional(),
+  priceZl: z.number().min(1).max(100000),
+  delivery: z.enum(["off", "console", "plugin"]),
+  waitOnline: z.boolean().optional(),
+  commands: z.string().max(4000).optional(),
+});
+
+export const shopCheckoutSchema = z.object({
+  productId: z.string().uuid(),
+  nick: z.string().trim().min(1).max(32).regex(/^[A-Za-z0-9_.' -]+$/),
+  email: z.string().trim().email().max(120),
+  steam: z.string().trim().max(40).regex(/^[A-Za-z0-9:_-]*$/).optional(),
+  fivem: z.string().trim().max(80).regex(/^[A-Za-z0-9:_-]*$/).optional(),
+  provider: z.enum(["stripe", "paypal", "p24"]),
+  consent: z.literal(true),
+  code: z.string().trim().max(32).regex(/^[A-Za-z0-9_-]*$/).optional(),
+});
+
+export const shopCodeSchema = z.object({
+  action: z.literal("code"),
+  kind: z.enum(["discount", "voucher"]),
+  code: z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9_-]+$/),
+  mode: z.enum(["percent", "amount"]).optional(),
+  percent: z.number().int().min(1).max(100).optional(),
+  amountZl: z.number().min(1).max(100000).optional(),
+  uses: z.number().int().min(1).max(100000).optional(),
+});

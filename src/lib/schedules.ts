@@ -10,6 +10,7 @@ const systemUser = {
   role: "owner",
   permissions: [] as string[],
   totpEnabled: false,
+  helloEnabled: false,
   backupCodesLeft: 0,
   createdAt: 0,
   lastLoginAt: null,

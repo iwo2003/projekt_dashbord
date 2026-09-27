@@ -1,4 +1,5 @@
 import { watchCrashes } from "./alerts";
+import { deliverShopQueue } from "./shop";
 import { runSchedules } from "./schedules";
 
 const globalForJobs = globalThis as { heliosJobs?: boolean };
@@ -10,6 +11,7 @@ async function tick() {
   try {
     await watchCrashes();
     await runSchedules();
+    await deliverShopQueue();
   } finally {
     busy = false;
   }

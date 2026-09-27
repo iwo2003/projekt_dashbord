@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
+import { helloClientError, registerHello } from "@/lib/hello-client";
 import type { PublicUser } from "@/lib/types";
 import { PanelOps } from "./panel-ops";
 import { ErrorNote, Field, LanguageSwitch } from "./ui";
@@ -20,6 +21,7 @@ export function SettingsView({ user, managePanel }: { user: PublicUser; managePa
   const [code, setCode] = useState("");
   const [codes, setCodes] = useState<string[]>([]);
   const [password, setPassword] = useState("");
+  const [helloPassword, setHelloPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function changePassword(event: React.FormEvent) {
@@ -82,6 +84,39 @@ export function SettingsView({ user, managePanel }: { user: PublicUser; managePa
       setPassword("");
       setCode("");
       setCodes([]);
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "request_failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addHello() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const options = await api<Parameters<typeof registerHello>[0]>("/api/account/hello", { method: "POST" });
+      const response = await registerHello(options);
+      await api("/api/account/hello", { method: "PUT", body: JSON.stringify(response) });
+      setMessage(t.settings.helloAdded);
+      router.refresh();
+    } catch (caught) {
+      setError(helloClientError(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeHello(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await api("/api/account/hello", { method: "DELETE", body: JSON.stringify({ password: helloPassword }) });
+      setHelloPassword("");
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "request_failed");
@@ -202,6 +237,26 @@ export function SettingsView({ user, managePanel }: { user: PublicUser; managePa
             </button>
           </div>
         ) : null}
+      </section>
+      <section className="card space-y-4 p-5">
+        <h2 className="text-lg font-semibold">{t.settings.helloTitle}</h2>
+        <p className="text-sm text-fog">{t.settings.helloLead}</p>
+        <p className="text-sm text-fog">{user.helloEnabled ? t.settings.helloOn : t.settings.helloOff}</p>
+        {user.helloEnabled ? (
+          <form className="space-y-3" onSubmit={removeHello}>
+            <p className="text-sm text-fog">{t.settings.helloRemoveLead}</p>
+            <Field label={t.auth.password}>
+              <input className="field" type="password" value={helloPassword} onChange={(event) => setHelloPassword(event.target.value)} required />
+            </Field>
+            <button className="btn btn-danger" disabled={busy} type="submit">
+              {t.settings.helloRemove}
+            </button>
+          </form>
+        ) : (
+          <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void addHello()}>
+            {t.settings.helloAdd}
+          </button>
+        )}
       </section>
     </div>
   );

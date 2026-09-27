@@ -13,7 +13,14 @@ export async function POST(request: Request) {
   if (!parsed.success) return apiError("validation", 400);
   const result = await loginWithPassword(parsed.data.username, parsed.data.password);
   if (!result.ok) return apiError(result.reason, 401);
-  if (result.totpRequired) return NextResponse.json({ totpRequired: true, challengeId: result.challengeId });
+  if (result.totpRequired) {
+    return NextResponse.json({
+      totpRequired: true,
+      totp: result.totp,
+      hello: result.hello,
+      challengeId: result.challengeId,
+    });
+  }
   clearRateLimit(`login:${ip}`);
   logEvent(result.user, "auth.login");
   return NextResponse.json({ ok: true, user: result.user });

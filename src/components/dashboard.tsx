@@ -60,7 +60,7 @@ export function Dashboard({ user }: { user: PublicUser }) {
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{user.username}</h1>
         <p className="mt-2 max-w-2xl text-fog">{t.dash.lead}</p>
       </div>
-      {!user.totpEnabled ? (
+      {!user.totpEnabled && !user.helloEnabled ? (
         <div className="card flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm">{t.dash.totpBanner}</p>
           <Link className="btn btn-primary" href="/settings">

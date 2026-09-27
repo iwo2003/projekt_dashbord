@@ -11,6 +11,7 @@ import {
   getChallenge,
   insertChallenge,
   insertSession,
+  countHello,
   purgeExpired,
   toPublicUser,
   updateUser,
@@ -112,10 +113,12 @@ export async function loginWithPassword(username: string, password: string) {
   if (!row) return { ok: false as const, reason: "invalid_credentials" as const };
   const valid = await verifyPassword(password, row.password_hash);
   if (!valid) return { ok: false as const, reason: "invalid_credentials" as const };
-  if (row.totp_enabled === 1 && row.totp_secret) {
+  const totp = row.totp_enabled === 1 && Boolean(row.totp_secret);
+  const hello = countHello(row.id) > 0;
+  if (totp || hello) {
     const challengeId = randomUUID();
     insertChallenge(challengeId, row.id);
-    return { ok: true as const, totpRequired: true as const, challengeId };
+    return { ok: true as const, totpRequired: true as const, totp, hello, challengeId };
   }
   updateUser(row.id, { lastLoginAt: Date.now() });
   await setSessionCookie(row.id);

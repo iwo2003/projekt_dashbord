@@ -65,6 +65,7 @@ export type PublicUser = {
   role: string;
   permissions: string[];
   totpEnabled: boolean;
+  helloEnabled: boolean;
   backupCodesLeft: number;
   createdAt: number;
   lastLoginAt: number | null;
